@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'none'; script-src {{cspSource}}; style-src {{cspSource}} 'unsafe-inline'; font-src {{cspSource}}; img-src {{cspSource}} data: blob:; worker-src {{cspSource}} blob:;"
+  />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jasper Preview</title>
+  <link rel="stylesheet" href="{{styleUri}}" />
+</head>
+<body data-worker-src="{{pdfWorkerUri}}">
+  <div id="loadingBar" class="loading-bar hidden" role="progressbar" aria-label="Processando relatório">
+    <div class="loading-bar-progress"></div>
+  </div>
+
+  <header class="toolbar-container">
+    <div class="toolbar-main">
+      <div class="toolbar-group toolbar-actions">
+        <button type="button" id="refreshBtn" class="btn btn-primary" title="Compilar e preencher relatório com os parâmetros atuais">
+          Atualizar
+        </button>
+        <button type="button" id="exportPdfBtn" class="btn btn-secondary" title="Salvar PDF em disco">
+          Exportar PDF
+        </button>
+        <button type="button" id="exportJasperBtn" class="btn btn-secondary" title="Compilar e exportar binário .jasper">
+          Exportar .jasper
+        </button>
+        <button type="button" id="toggleParamsBtn" class="btn btn-secondary" aria-expanded="true" title="Mostrar ou ocultar formulário de parâmetros">
+          Parâmetros (<span id="paramCount">0</span>)
+        </button>
+        <label class="checkbox-inline" title="Recarregar visualização automaticamente ao salvar o arquivo .jrxml (Ctrl+S)">
+          <input type="checkbox" id="autoReloadToggle" checked />
+          <span>Auto-reload ao salvar</span>
+        </label>
+      </div>
+
+      <div class="toolbar-group toolbar-viewer-controls">
+        <div class="control-cluster" aria-label="Paginação">
+          <button type="button" id="prevPageBtn" class="btn btn-icon" title="Página Anterior" disabled>
+            &#9664;
+          </button>
+          <span id="pageIndicator" class="toolbar-label">Página 0 de 0</span>
+          <button type="button" id="nextPageBtn" class="btn btn-icon" title="Próxima Página" disabled>
+            &#9654;
+          </button>
+        </div>
+
+        <span class="toolbar-divider" aria-hidden="true"></span>
+
+        <div class="control-cluster" aria-label="Controles de Zoom">
+          <button type="button" id="zoomOutBtn" class="btn btn-icon" title="Diminuir Zoom (-)" disabled>
+            &minus;
+          </button>
+          <span id="zoomIndicator" class="toolbar-label zoom-label">100%</span>
+          <button type="button" id="zoomInBtn" class="btn btn-icon" title="Aumentar Zoom (+)" disabled>
+            &#43;
+          </button>
+          <button type="button" id="fitWidthBtn" class="btn btn-secondary btn-compact" title="Ajustar à Largura" disabled>
+            Ajustar à Largura
+          </button>
+          <button type="button" id="resetZoomBtn" class="btn btn-secondary btn-compact" title="Zoom 100%" disabled>
+            100%
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toolbar-meta">
+      <span id="reportTitleLabel" class="meta-item">Relatório: —</span>
+      <span id="connectionStatusLabel" class="meta-item">Conexão: —</span>
+      <span id="executionStatsLabel" class="meta-item hidden"></span>
+    </div>
+
+    <section id="paramsSection" class="params-section" aria-label="Parâmetros do Relatório">
+      <form id="paramsForm" class="params-grid" novalidate></form>
+      <div id="emptyParamsHint" class="empty-params-hint hidden">
+        Nenhum parâmetro de usuário detectado neste relatório (.jrxml).
+      </div>
+    </section>
+  </header>
+
+  <div id="statusBanner" class="status-banner hidden" role="alert">
+    <div class="status-banner-content">
+      <strong id="statusTitle"></strong>
+      <span id="statusMessage"></span>
+    </div>
+    <div class="status-banner-actions">
+      <button type="button" id="openLogBtn" class="btn btn-secondary btn-compact hidden">
+        Ver Log
+      </button>
+      <button type="button" id="dismissBannerBtn" class="btn btn-icon" title="Fechar aviso">
+        &times;
+      </button>
+    </div>
+  </div>
+
+  <main id="viewerViewport" class="viewer-viewport">
+    <div id="emptyState" class="empty-state">
+      <p id="emptyStateText">Preparando visualização do relatório...</p>
+    </div>
+    <div id="canvasWrapper" class="canvas-wrapper hidden">
+      <canvas id="pdfCanvas"></canvas>
+    </div>
+  </main>
+
+  <script src="{{pdfJsUri}}"></script>
+  <script src="{{scriptUri}}"></script>
+</body>
+</html>

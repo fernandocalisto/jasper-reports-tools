@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import { ConnectionManager } from '../services/connectionManager';
 import { RunnerCliError, RunnerService } from '../services/runnerService';
 import { jrxmlParser } from '../services/jrxmlParser';
+import { PreviewPanel } from '../webviewPanels/previewPanel';
 
-function resolveTargetJrxmlPath(uriArg?: vscode.Uri): {
+export function resolveTargetJrxmlPath(uriArg?: vscode.Uri): {
   filePath?: string;
   document?: vscode.TextDocument;
 } {
@@ -30,11 +32,10 @@ function resolveTargetJrxmlPath(uriArg?: vscode.Uri): {
 
 export function registerReportCommands(
   context: vscode.ExtensionContext,
+  connectionManager: ConnectionManager,
   runnerService: RunnerService,
   outputChannel: vscode.OutputChannel
 ): vscode.Disposable[] {
-  void context;
-
   const compileCurrentReportCmd = vscode.commands.registerCommand(
     'jasper.compileCurrentReport',
     async (uriArg?: vscode.Uri) => {
@@ -115,5 +116,38 @@ export function registerReportCommands(
     }
   );
 
-  return [compileCurrentReportCmd];
+  const openPreviewCmd = vscode.commands.registerCommand(
+    'jasper.openPreview',
+    async (uriArg?: vscode.Uri) => {
+      const { filePath, document } = resolveTargetJrxmlPath(uriArg);
+
+      if (!filePath) {
+        void vscode.window.showWarningMessage(
+          'Nenhum arquivo aberto no editor. Abra um relatório .jrxml para visualizar o preview.'
+        );
+        return;
+      }
+
+      if (path.extname(filePath).toLowerCase() !== '.jrxml') {
+        void vscode.window.showWarningMessage(
+          `O arquivo "${path.basename(filePath)}" não possui extensão .jrxml.`
+        );
+        return;
+      }
+
+      if (document && document.isDirty) {
+        await document.save();
+      }
+
+      PreviewPanel.createOrShow(
+        context,
+        connectionManager,
+        runnerService,
+        outputChannel,
+        filePath
+      );
+    }
+  );
+
+  return [compileCurrentReportCmd, openPreviewCmd];
 }

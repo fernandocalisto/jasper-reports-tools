@@ -20,7 +20,8 @@
     "onCommand:jasper.deleteConnection",
     "onCommand:jasper.setActiveConnection",
     "onCommand:jasper.testConnection",
-    "onCommand:jasper.compileCurrentReport"
+    "onCommand:jasper.compileCurrentReport",
+    "onCommand:jasper.openPreview"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -77,6 +78,12 @@
         "title": "Compilar Relatório Aberto",
         "category": "Jasper",
         "icon": "$(gear)"
+      },
+      {
+        "command": "jasper.openPreview",
+        "title": "Abrir Preview Dividido (Split)",
+        "category": "Jasper",
+        "icon": "$(open-preview)"
       }
     ],
     "menus": {
@@ -92,6 +99,11 @@
           "command": "jasper.compileCurrentReport",
           "when": "resourceExtname == .jrxml",
           "group": "navigation@1"
+        },
+        {
+          "command": "jasper.openPreview",
+          "when": "resourceExtname == .jrxml",
+          "group": "navigation@2"
         }
       ],
       "editor/context": [
@@ -99,6 +111,11 @@
           "command": "jasper.compileCurrentReport",
           "when": "resourceExtname == .jrxml",
           "group": "1_jasper@1"
+        },
+        {
+          "command": "jasper.openPreview",
+          "when": "resourceExtname == .jrxml",
+          "group": "1_jasper@2"
         }
       ],
       "explorer/context": [
@@ -106,6 +123,11 @@
           "command": "jasper.compileCurrentReport",
           "when": "resourceExtname == .jrxml",
           "group": "1_jasper@1"
+        },
+        {
+          "command": "jasper.openPreview",
+          "when": "resourceExtname == .jrxml",
+          "group": "1_jasper@2"
         }
       ],
       "view/item/context": [
@@ -156,6 +178,12 @@
         "command": "jasper.compileCurrentReport",
         "key": "ctrl+shift+b",
         "mac": "cmd+shift+b",
+        "when": "editorTextFocus && resourceExtname == .jrxml"
+      },
+      {
+        "command": "jasper.openPreview",
+        "key": "ctrl+shift+v",
+        "mac": "cmd+shift+v",
         "when": "editorTextFocus && resourceExtname == .jrxml"
       }
     ]

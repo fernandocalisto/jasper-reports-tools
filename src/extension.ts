@@ -4,6 +4,7 @@ import { RunnerService } from './services/runnerService';
 import { DatabaseTreeProvider } from './providers/databaseTreeProvider';
 import { registerConnectionCommands } from './commands/connectionCommands';
 import { registerReportCommands } from './commands/reportCommands';
+import { PreviewPanel } from './webviewPanels/previewPanel';
 
 let statusBarItem: vscode.StatusBarItem | undefined;
 let outputChannel: vscode.OutputChannel | undefined;
@@ -49,7 +50,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     runnerService,
     outputChannel
   );
-  const reportDisposables = registerReportCommands(context, runnerService, outputChannel);
+  const reportDisposables = registerReportCommands(
+    context,
+    connectionManager,
+    runnerService,
+    outputChannel
+  );
+
+  const saveDocumentListener = vscode.workspace.onDidSaveTextDocument((document) => {
+    if (document.fileName.toLowerCase().endsWith('.jrxml')) {
+      PreviewPanel.handleDidSaveTextDocument(document);
+    }
+  });
 
   context.subscriptions.push(
     outputChannel,
@@ -58,12 +70,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     treeView,
     statusBarItem,
     connectionListener,
+    saveDocumentListener,
     ...connectionDisposables,
     ...reportDisposables
   );
 }
 
 export function deactivate(): void {
+  if (PreviewPanel.currentPanel) {
+    PreviewPanel.currentPanel.dispose();
+  }
   if (statusBarItem) {
     statusBarItem.dispose();
     statusBarItem = undefined;

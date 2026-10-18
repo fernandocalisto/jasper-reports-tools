@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'none'; style-src {{cspSource}} 'unsafe-inline'; script-src 'nonce-{{nonce}}';"
+  />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Conexão de Banco de Dados</title>
+  <link rel="stylesheet" href="{{styleUri}}" />
+</head>
+<body>
+  <main class="form-container">
+    <header class="form-header">
+      <h1 id="formTitle">Nova Conexão de Banco de Dados</h1>
+      <p class="form-subtitle">
+        Configure os parâmetros JDBC para compilação e preenchimento de relatórios JasperReports. As senhas são armazenadas exclusivamente no cofre seguro do sistema operacional (SecretStorage).
+      </p>
+    </header>
+
+    <div id="statusBanner" class="status-banner hidden" role="alert"></div>
+
+    <form id="connectionForm" novalidate>
+      <input type="hidden" id="profileId" name="id" />
+
+      <div class="form-group">
+        <label for="name">Nome da Conexão <span class="required">*</span></label>
+        <input
+          type="text"
+          id="name"
+          name="name"
+          placeholder="Ex: Docker Local, Hospital Produção"
+          required
+          autocomplete="off"
+        />
+        <span class="field-hint">Identificador amigável exibido na barra lateral e na Status Bar.</span>
+      </div>
+
+      <div class="form-group">
+        <label for="driver">Driver JDBC <span class="required">*</span></label>
+        <select id="driver" name="driver" required>
+          <option value="postgres">PostgreSQL</option>
+          <option value="oracle">Oracle</option>
+          <option value="custom">Personalizado (.jar)</option>
+        </select>
+      </div>
+
+      <section id="customDriverSection" class="custom-driver-section hidden" aria-label="Configuração de Driver Personalizado">
+        <div class="form-group">
+          <label for="customDriverPath">Arquivo do Driver (.jar) <span class="required">*</span></label>
+          <div class="input-with-button">
+            <input
+              type="text"
+              id="customDriverPath"
+              name="customDriverPath"
+              placeholder="Caminho absoluto para o arquivo .jar do driver JDBC"
+              autocomplete="off"
+            />
+            <button type="button" id="browseJarBtn" class="btn btn-secondary">
+              Procurar...
+            </button>
+          </div>
+          <span class="field-hint">Selecione o arquivo .jar externo (ex: mssql-jdbc.jar, mysql-connector-j.jar).</span>
+        </div>
+
+        <div class="form-group">
+          <label for="customDriverClass">Classe do Driver <span class="required">*</span></label>
+          <input
+            type="text"
+            id="customDriverClass"
+            name="customDriverClass"
+            placeholder="Ex: com.microsoft.sqlserver.jdbc.SQLServerDriver"
+            autocomplete="off"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="jdbcUrl">URL JDBC Customizada (Opcional)</label>
+          <input
+            type="text"
+            id="jdbcUrl"
+            name="jdbcUrl"
+            placeholder="Ex: jdbc:sqlserver://localhost:1433;databaseName=hospital"
+            autocomplete="off"
+          />
+          <span class="field-hint">Se preenchida, terá prioridade sobre a combinação automática de Host/Porta/Database.</span>
+        </div>
+      </section>
+
+      <div class="form-row">
+        <div class="form-group form-col-grow">
+          <label for="host">Host <span class="required">*</span></label>
+          <input
+            type="text"
+            id="host"
+            name="host"
+            placeholder="localhost"
+            value="localhost"
+            required
+            autocomplete="off"
+          />
+        </div>
+
+        <div class="form-group form-col-port">
+          <label for="port">Porta <span class="required">*</span></label>
+          <input
+            type="number"
+            id="port"
+            name="port"
+            placeholder="5432"
+            value="5432"
+            min="1"
+            max="65535"
+            required
+          />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="database" id="databaseLabel">Database / Service Name <span class="required">*</span></label>
+        <input
+          type="text"
+          id="database"
+          name="database"
+          placeholder="Ex: hospital_db ou ORCL"
+          required
+          autocomplete="off"
+        />
+      </div>
+
+      <div class="form-row">
+        <div class="form-group form-col-half">
+          <label for="user">Usuário <span class="required">*</span></label>
+          <input
+            type="text"
+            id="user"
+            name="user"
+            placeholder="Ex: postgres"
+            required
+            autocomplete="off"
+          />
+        </div>
+
+        <div class="form-group form-col-half">
+          <label for="password">Senha</label>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            placeholder="Digite a senha do banco"
+            autocomplete="new-password"
+          />
+          <span id="passwordHint" class="field-hint">Armazenada com criptografia via VS Code SecretStorage.</span>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" id="testConnectionBtn" class="btn btn-secondary">
+          Testar Conexão
+        </button>
+        <button type="submit" id="saveConnectionBtn" class="btn btn-primary">
+          Salvar Conexão
+        </button>
+      </div>
+    </form>
+  </main>
+
+  <script nonce="{{nonce}}" src="{{scriptUri}}"></script>
+</body>
+</html>

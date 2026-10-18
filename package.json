@@ -19,7 +19,8 @@
     "onCommand:jasper.editConnection",
     "onCommand:jasper.deleteConnection",
     "onCommand:jasper.setActiveConnection",
-    "onCommand:jasper.testConnection"
+    "onCommand:jasper.testConnection",
+    "onCommand:jasper.compileCurrentReport"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -70,6 +71,12 @@
         "title": "Testar Conexão",
         "category": "Jasper",
         "icon": "$(plug)"
+      },
+      {
+        "command": "jasper.compileCurrentReport",
+        "title": "Compilar Relatório Aberto",
+        "category": "Jasper",
+        "icon": "$(gear)"
       }
     ],
     "menus": {
@@ -78,6 +85,27 @@
           "command": "jasper.addConnection",
           "when": "view == jasper-databases",
           "group": "navigation"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "jasper.compileCurrentReport",
+          "when": "resourceExtname == .jrxml",
+          "group": "navigation@1"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "jasper.compileCurrentReport",
+          "when": "resourceExtname == .jrxml",
+          "group": "1_jasper@1"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "jasper.compileCurrentReport",
+          "when": "resourceExtname == .jrxml",
+          "group": "1_jasper@1"
         }
       ],
       "view/item/context": [
@@ -122,7 +150,15 @@
           "group": "2_modification@2"
         }
       ]
-    }
+    },
+    "keybindings": [
+      {
+        "command": "jasper.compileCurrentReport",
+        "key": "ctrl+shift+b",
+        "mac": "cmd+shift+b",
+        "when": "editorTextFocus && resourceExtname == .jrxml"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

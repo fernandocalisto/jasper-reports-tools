@@ -1,9 +1,12 @@
 import * as vscode from 'vscode';
 import { ConnectionManager } from './services/connectionManager';
+import { RunnerService } from './services/runnerService';
 import { DatabaseTreeProvider } from './providers/databaseTreeProvider';
 import { registerConnectionCommands } from './commands/connectionCommands';
+import { registerReportCommands } from './commands/reportCommands';
 
 let statusBarItem: vscode.StatusBarItem | undefined;
+let outputChannel: vscode.OutputChannel | undefined;
 
 async function updateStatusBar(
   connectionManager: ConnectionManager,
@@ -20,7 +23,9 @@ async function updateStatusBar(
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  outputChannel = vscode.window.createOutputChannel('JasperReports');
   const connectionManager = new ConnectionManager(context);
+  const runnerService = new RunnerService(context);
   const databaseTreeProvider = new DatabaseTreeProvider(connectionManager);
 
   const treeView = vscode.window.createTreeView('jasper-databases', {
@@ -38,15 +43,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   });
 
-  const commandDisposables = registerConnectionCommands(context, connectionManager);
+  const connectionDisposables = registerConnectionCommands(
+    context,
+    connectionManager,
+    runnerService,
+    outputChannel
+  );
+  const reportDisposables = registerReportCommands(context, runnerService, outputChannel);
 
   context.subscriptions.push(
+    outputChannel,
     connectionManager,
     databaseTreeProvider,
     treeView,
     statusBarItem,
     connectionListener,
-    ...commandDisposables
+    ...connectionDisposables,
+    ...reportDisposables
   );
 }
 
@@ -54,5 +67,9 @@ export function deactivate(): void {
   if (statusBarItem) {
     statusBarItem.dispose();
     statusBarItem = undefined;
+  }
+  if (outputChannel) {
+    outputChannel.dispose();
+    outputChannel = undefined;
   }
 }

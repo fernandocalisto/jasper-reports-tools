@@ -63,6 +63,9 @@ export function buildJdbcUrl(profile: DatabaseProfile): string {
     }
     case 'oracle': {
       const port = profile.port || 1521;
+      if (database.startsWith('/')) {
+        return `jdbc:oracle:thin:@//${host}:${port}${database}`;
+      }
       return `jdbc:oracle:thin:@${host}:${port}:${database}`;
     }
     case 'custom': {

@@ -670,6 +670,144 @@ export function registerServerCommands(
     }
   );
 
+  const uploadNewJrxmlToServerCmd = vscode.commands.registerCommand(
+    'jasper.uploadNewJrxmlToServer',
+    async (arg?: ServerTreeItem) => {
+      // Determine target folder and profile
+      let profile: JasperServerProfile | undefined;
+      let folderUri = '/';
+
+      if (arg instanceof ServerTreeItem && arg.kind === 'resource' && arg.resource) {
+        if (arg.resource.resourceType === 'folder') {
+          profile = arg.profile;
+          folderUri = arg.resource.uri;
+        } else {
+          // If it's a file, use its parent folder
+          profile = arg.profile;
+          folderUri = arg.resource.parentFolderUri || '/';
+        }
+      } else if (arg instanceof ServerTreeItem && arg.kind === 'server') {
+        profile = arg.profile;
+        folderUri = '/';
+      }
+
+      if (!profile) {
+        profile = await serverManager.getActiveProfile();
+        if (!profile) {
+          const picked = await promptForServerProfile(
+            serverManager,
+            'Selecione o servidor JasperServer de destino',
+            true
+          );
+          if (!picked) {
+            return;
+          }
+          if (picked === 'add') {
+            await vscode.commands.executeCommand('jasper.addServer');
+            return;
+          }
+          profile = picked;
+        }
+      }
+
+      // Pick a .jrxml file from the workspace
+      const jrxmlFiles = await vscode.workspace.findFiles('**/*.jrxml');
+      if (jrxmlFiles.length === 0) {
+        void vscode.window.showWarningMessage(
+          'Nenhum arquivo .jrxml encontrado no workspace.'
+        );
+        return;
+      }
+
+      const fileItems = jrxmlFiles.map((uri) => ({
+        label: path.basename(uri.fsPath),
+        description: vscode.workspace.asRelativePath(uri),
+        uri
+      }));
+
+      const selectedFile = await vscode.window.showQuickPick(fileItems, {
+        placeHolder: 'Selecione o arquivo .jrxml do workspace para enviar como novo recurso',
+        matchOnDescription: true
+      });
+
+      if (!selectedFile) {
+        return;
+      }
+
+      // Confirm file name (allow override)
+      const defaultFileName = path.basename(selectedFile.uri.fsPath);
+      const targetFileName = await vscode.window.showInputBox({
+        title: `Nome do recurso no JasperServer (${profile.name}:${folderUri})`,
+        prompt: 'Nome do arquivo .jrxml a ser criado no servidor',
+        value: defaultFileName,
+        validateInput: (value) => {
+          if (!value || !value.trim()) {
+            return 'Informe um nome válido';
+          }
+          if (!value.toLowerCase().endsWith('.jrxml')) {
+            return 'O nome deve terminar com .jrxml';
+          }
+          return undefined;
+        }
+      });
+
+      if (!targetFileName) {
+        return;
+      }
+
+      // Read file content
+      let jrxmlContent: string;
+      try {
+        jrxmlContent = fs.readFileSync(selectedFile.uri.fsPath, 'utf8');
+      } catch (error) {
+        const errMessage = error instanceof Error ? error.message : 'Falha ao ler o arquivo local.';
+        void vscode.window.showErrorMessage(`Falha ao ler \"${defaultFileName}\": ${errMessage}`);
+        return;
+      }
+
+      try {
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: `JasperServer: Enviando novo recurso \"${targetFileName}\" para ${profile.name}...`,
+            cancellable: false
+          },
+          async () => {
+            const password = await serverManager.getPassword(profile.id);
+            await serverClient.uploadResource(
+              folderUri,
+              targetFileName,
+              jrxmlContent,
+              'jrxml',
+              profile,
+              password
+            );
+          }
+        );
+
+        outputChannel.appendLine(
+          `[${new Date().toLocaleTimeString('pt-BR')}] [JasperServer] Novo recurso \"${targetFileName}\" criado em \"${profile.name}:${folderUri}\".`
+        );
+
+        serverTreeProvider.refresh();
+        void vscode.window.showInformationMessage(
+          `Novo recurso \"${targetFileName}\" criado com sucesso em \"${profile.name}\" (${folderUri})!`
+        );
+      } catch (error) {
+        const errMessage =
+          error instanceof Error
+            ? error.message
+            : 'Falha ao criar novo recurso no JasperServer.';
+        outputChannel.appendLine(
+          `[${new Date().toLocaleTimeString('pt-BR')}] [JasperServer] ERRO ao criar \"${targetFileName}\": ${errMessage}`
+        );
+        void vscode.window.showErrorMessage(
+          `Falha ao criar \"${targetFileName}\": ${errMessage}`
+        );
+      }
+    }
+  );
+
   const deleteServerResourceCmd = vscode.commands.registerCommand(
     'jasper.deleteServerResource',
     async (item?: ServerTreeItem) => {
@@ -734,6 +872,7 @@ export function registerServerCommands(
     downloadServerReportCmd,
     deployJasperToServerCmd,
     updateJrxmlOnServerCmd,
+    uploadNewJrxmlToServerCmd,
     deleteServerResourceCmd
   ];
 }

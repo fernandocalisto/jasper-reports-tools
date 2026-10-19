@@ -31,7 +31,8 @@
     "onCommand:jasper.downloadServerReport",
     "onCommand:jasper.deployJasperToServer",
     "onCommand:jasper.updateJrxmlOnServer",
-    "onCommand:jasper.deleteServerResource"
+    "onCommand:jasper.deleteServerResource",
+    "onCommand:jasper.uploadNewJrxmlToServer"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -152,6 +153,12 @@
         "title": "Excluir no Servidor",
         "category": "Jasper",
         "icon": "$(trash)"
+      },
+      {
+        "command": "jasper.uploadNewJrxmlToServer",
+        "title": "Enviar Novo .jrxml para o Servidor",
+        "category": "Jasper",
+        "icon": "$(new-file)"
       }
     ],
     "menus": {
@@ -310,9 +317,14 @@
           "group": "1_actions@1"
         },
         {
-          "command": "jasper.updateJrxmlOnServer",
+          "command": "jasper.uploadNewJrxmlToServer",
           "when": "view == jasper-servers && viewItem == serverFolder",
           "group": "1_actions@2"
+        },
+        {
+          "command": "jasper.updateJrxmlOnServer",
+          "when": "view == jasper-servers && viewItem == serverFolder",
+          "group": "1_actions@3"
         },
         {
           "command": "jasper.refreshServerTree",

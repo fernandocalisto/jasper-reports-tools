@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'none'; style-src {{cspSource}} 'unsafe-inline'; script-src 'nonce-{{nonce}}';"
+  />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Servidor JasperServer</title>
+  <link rel="stylesheet" href="{{styleUri}}" />
+</head>
+<body>
+  <main class="form-container">
+    <header class="form-header">
+      <h1 id="formTitle">Novo Servidor JasperServer</h1>
+      <p class="form-subtitle">
+        Configure o acesso ao repositório do JasperReports Server via REST API v2. As senhas são armazenadas exclusivamente no cofre seguro do sistema operacional (SecretStorage).
+      </p>
+    </header>
+
+    <div id="statusBanner" class="status-banner hidden" role="alert"></div>
+
+    <form id="serverForm" novalidate>
+      <input type="hidden" id="profileId" name="id" />
+
+      <div class="form-group">
+        <label for="name">Nome do Perfil <span class="required">*</span></label>
+        <input
+          type="text"
+          id="name"
+          name="name"
+          placeholder="Ex: Homologação, Hospital Produção"
+          required
+          autocomplete="off"
+        />
+        <span class="field-hint">Identificador amigável exibido no JasperServer Explorer.</span>
+      </div>
+
+      <div class="form-group">
+        <label for="baseUrl">URL Base <span class="required">*</span></label>
+        <input
+          type="url"
+          id="baseUrl"
+          name="baseUrl"
+          placeholder="http://localhost:8080/jasperserver"
+          value="http://localhost:8080/jasperserver"
+          required
+          autocomplete="off"
+        />
+        <span class="field-hint">URL raiz do JasperServer (ex: http://servidor:8080/jasperserver ou /jasperserver-pro).</span>
+      </div>
+
+      <div class="form-group">
+        <label for="organization">Organização (Opcional)</label>
+        <input
+          type="text"
+          id="organization"
+          name="organization"
+          placeholder="Ex: organization_1 (apenas JasperServer Pro / Enterprise)"
+          autocomplete="off"
+        />
+        <span class="field-hint">Deixe em branco para edições Community.</span>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group form-col-half">
+          <label for="username">Usuário <span class="required">*</span></label>
+          <input
+            type="text"
+            id="username"
+            name="username"
+            placeholder="Ex: jasperadmin"
+            required
+            autocomplete="off"
+          />
+        </div>
+
+        <div class="form-group form-col-half">
+          <label for="password">Senha</label>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            placeholder="Digite a senha do servidor"
+            autocomplete="new-password"
+          />
+          <span id="passwordHint" class="field-hint">Armazenada com criptografia via VS Code SecretStorage.</span>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="button" id="testServerBtn" class="btn btn-secondary">
+          Testar Comunicação
+        </button>
+        <button type="submit" id="saveServerBtn" class="btn btn-primary">
+          Salvar Servidor
+        </button>
+      </div>
+    </form>
+  </main>
+
+  <script nonce="{{nonce}}" src="{{scriptUri}}"></script>
+</body>
+</html>

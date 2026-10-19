@@ -15,13 +15,23 @@
   "activationEvents": [
     "onStartupFinished",
     "onView:jasper-databases",
+    "onView:jasper-servers",
     "onCommand:jasper.addConnection",
     "onCommand:jasper.editConnection",
     "onCommand:jasper.deleteConnection",
     "onCommand:jasper.setActiveConnection",
     "onCommand:jasper.testConnection",
     "onCommand:jasper.compileCurrentReport",
-    "onCommand:jasper.openPreview"
+    "onCommand:jasper.openPreview",
+    "onCommand:jasper.addServer",
+    "onCommand:jasper.editServer",
+    "onCommand:jasper.deleteServer",
+    "onCommand:jasper.setActiveServer",
+    "onCommand:jasper.refreshServerTree",
+    "onCommand:jasper.downloadServerReport",
+    "onCommand:jasper.deployJasperToServer",
+    "onCommand:jasper.updateJrxmlOnServer",
+    "onCommand:jasper.deleteServerResource"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -39,6 +49,10 @@
         {
           "id": "jasper-databases",
           "name": "Conexões de Banco de Dados"
+        },
+        {
+          "id": "jasper-servers",
+          "name": "JasperServer Explorer"
         }
       ]
     },
@@ -84,6 +98,60 @@
         "title": "Abrir Preview Dividido (Split)",
         "category": "Jasper",
         "icon": "$(open-preview)"
+      },
+      {
+        "command": "jasper.addServer",
+        "title": "Adicionar Servidor JasperServer",
+        "category": "Jasper",
+        "icon": "$(add)"
+      },
+      {
+        "command": "jasper.editServer",
+        "title": "Editar Servidor JasperServer",
+        "category": "Jasper",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "jasper.deleteServer",
+        "title": "Excluir Servidor JasperServer",
+        "category": "Jasper",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "jasper.setActiveServer",
+        "title": "Definir como Servidor Ativo",
+        "category": "Jasper",
+        "icon": "$(check)"
+      },
+      {
+        "command": "jasper.refreshServerTree",
+        "title": "Atualizar Repositório JasperServer",
+        "category": "Jasper",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "jasper.downloadServerReport",
+        "title": "Baixar e Abrir",
+        "category": "Jasper",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "jasper.deployJasperToServer",
+        "title": "Deploy .jasper (Compilar e Enviar)",
+        "category": "Jasper",
+        "icon": "$(cloud-upload)"
+      },
+      {
+        "command": "jasper.updateJrxmlOnServer",
+        "title": "Atualizar .jrxml no Servidor",
+        "category": "Jasper",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "jasper.deleteServerResource",
+        "title": "Excluir no Servidor",
+        "category": "Jasper",
+        "icon": "$(trash)"
       }
     ],
     "menus": {
@@ -92,6 +160,16 @@
           "command": "jasper.addConnection",
           "when": "view == jasper-databases",
           "group": "navigation"
+        },
+        {
+          "command": "jasper.addServer",
+          "when": "view == jasper-servers",
+          "group": "navigation@1"
+        },
+        {
+          "command": "jasper.refreshServerTree",
+          "when": "view == jasper-servers",
+          "group": "navigation@2"
         }
       ],
       "editor/title": [
@@ -116,6 +194,16 @@
           "command": "jasper.openPreview",
           "when": "resourceExtname == .jrxml",
           "group": "1_jasper@2"
+        },
+        {
+          "command": "jasper.deployJasperToServer",
+          "when": "resourceExtname == .jrxml",
+          "group": "1_jasper@3"
+        },
+        {
+          "command": "jasper.updateJrxmlOnServer",
+          "when": "resourceExtname == .jrxml",
+          "group": "1_jasper@4"
         }
       ],
       "explorer/context": [
@@ -128,6 +216,16 @@
           "command": "jasper.openPreview",
           "when": "resourceExtname == .jrxml",
           "group": "1_jasper@2"
+        },
+        {
+          "command": "jasper.deployJasperToServer",
+          "when": "resourceExtname == .jrxml",
+          "group": "1_jasper@3"
+        },
+        {
+          "command": "jasper.updateJrxmlOnServer",
+          "when": "resourceExtname == .jrxml",
+          "group": "1_jasper@4"
         }
       ],
       "view/item/context": [
@@ -170,6 +268,86 @@
           "command": "jasper.deleteConnection",
           "when": "view == jasper-databases && viewItem =~ /^databaseProfile/",
           "group": "2_modification@2"
+        },
+        {
+          "command": "jasper.setActiveServer",
+          "when": "view == jasper-servers && viewItem =~ /^serverProfile/",
+          "group": "inline@1"
+        },
+        {
+          "command": "jasper.editServer",
+          "when": "view == jasper-servers && viewItem =~ /^serverProfile/",
+          "group": "inline@2"
+        },
+        {
+          "command": "jasper.deleteServer",
+          "when": "view == jasper-servers && viewItem =~ /^serverProfile/",
+          "group": "inline@3"
+        },
+        {
+          "command": "jasper.setActiveServer",
+          "when": "view == jasper-servers && viewItem =~ /^serverProfile/",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "jasper.refreshServerTree",
+          "when": "view == jasper-servers && viewItem =~ /^serverProfile/",
+          "group": "1_actions@2"
+        },
+        {
+          "command": "jasper.editServer",
+          "when": "view == jasper-servers && viewItem =~ /^serverProfile/",
+          "group": "2_modification@1"
+        },
+        {
+          "command": "jasper.deleteServer",
+          "when": "view == jasper-servers && viewItem =~ /^serverProfile/",
+          "group": "2_modification@2"
+        },
+        {
+          "command": "jasper.deployJasperToServer",
+          "when": "view == jasper-servers && viewItem == serverFolder",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "jasper.updateJrxmlOnServer",
+          "when": "view == jasper-servers && viewItem == serverFolder",
+          "group": "1_actions@2"
+        },
+        {
+          "command": "jasper.refreshServerTree",
+          "when": "view == jasper-servers && viewItem == serverFolder",
+          "group": "1_actions@3"
+        },
+        {
+          "command": "jasper.downloadServerReport",
+          "when": "view == jasper-servers && viewItem =~ /^serverReport/",
+          "group": "inline@1"
+        },
+        {
+          "command": "jasper.deployJasperToServer",
+          "when": "view == jasper-servers && viewItem =~ /^serverReport/",
+          "group": "inline@2"
+        },
+        {
+          "command": "jasper.downloadServerReport",
+          "when": "view == jasper-servers && viewItem =~ /^serverReport/",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "jasper.deployJasperToServer",
+          "when": "view == jasper-servers && viewItem =~ /^serverReport/",
+          "group": "1_actions@2"
+        },
+        {
+          "command": "jasper.updateJrxmlOnServer",
+          "when": "view == jasper-servers && viewItem =~ /^serverReport/",
+          "group": "1_actions@3"
+        },
+        {
+          "command": "jasper.deleteServerResource",
+          "when": "view == jasper-servers && viewItem =~ /^serverReport/",
+          "group": "2_modification@1"
         }
       ]
     },

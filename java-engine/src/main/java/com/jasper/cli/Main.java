@@ -47,6 +47,7 @@ import java.util.concurrent.Callable;
                 "                  Também aceita um .jrprint como --input.",
                 "  test-conn       Testa a conexão JDBC e retorna a latência em ms.",
                 "  inspect-params  Lista parâmetros, campos e query de --input (.jrxml/.jasper).",
+                "  inspect-query   Executa a query do relatório no banco (LIMIT 0 / WHERE 1=0) e retorna metadados JDBC das colunas.",
                 "",
                 "Sem --db-url, fill/export usam uma fonte de dados vazia com 1 registro (modo mock).",
                 "Parâmetros injetados automaticamente: SUBREPORT_DIR (diretório de --input, com '/' final)",
@@ -59,13 +60,15 @@ import java.util.concurrent.Callable;
                 "       --db-url jdbc:postgresql://localhost:5432/hospital --db-user app --db-pass segredo \\",
                 "       --params \"{\\\"CD_ATENDIMENTO\\\": 1050}\"",
                 "  java -jar jasper-cli.jar --action test-conn --db-url jdbc:oracle:thin:@host:1521:ORCL \\",
-                "       --db-user app --db-pass segredo"
+                "       --db-user app --db-pass segredo",
+                "  java -jar jasper-cli.jar --action inspect-query --input relatorio.jrxml \\",
+                "       --db-url jdbc:postgresql://localhost:5432/hospital --db-user app --db-pass segredo"
         }
 )
 public class Main implements Callable<Integer> {
 
     @Option(names = "--action", required = true, paramLabel = "<action>", order = 1,
-            description = "Obrigatório. compile | fill | export | test-conn | inspect-params")
+            description = "Obrigatório. compile | fill | export | test-conn | inspect-params | inspect-query")
     private String action;
 
     @Option(names = "--format", defaultValue = "pdf", paramLabel = "<format>", order = 2,

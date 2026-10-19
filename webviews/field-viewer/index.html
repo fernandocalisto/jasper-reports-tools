@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'none'; style-src {{cspSource}} 'unsafe-inline'; script-src 'nonce-{{nonce}}';"
+  >
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Field Viewer — JasperReports</title>
+  <link rel="stylesheet" href="{{styleUri}}">
+</head>
+<body>
+  <div class="viewer-container">
+    <header class="viewer-header">
+      <div class="header-title-row">
+        <div>
+          <h1 id="reportTitle">Field Viewer</h1>
+          <p class="header-subtitle" id="reportSubtitle">
+            Clique em qualquer linha para copiar a expressão <code>$F{...}</code> para a área de transferência.
+          </p>
+        </div>
+        <div class="connection-badge" id="connectionBadge" title="Clique para alternar a conexão ativa">
+          <span class="conn-dot" id="connDot"></span>
+          <span id="connectionLabel">Nenhuma Conexão</span>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <div class="search-wrapper">
+          <input
+            type="text"
+            id="searchInput"
+            placeholder="Filtrar por nome do campo ou tipo Java/JDBC..."
+            autocomplete="off"
+          >
+        </div>
+        <div class="toolbar-actions">
+          <button type="button" id="btnRefreshStatic" class="btn btn-secondary" title="Reler campos declarados no arquivo .jrxml">
+            Reler .jrxml
+          </button>
+          <button type="button" id="btnInspectDb" class="btn btn-primary" title="Executar introspecção da query SQL no banco conectado (LIMIT 0 / WHERE 1=0)">
+            Atualizar Tipos no Banco
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div id="statusBanner" class="status-banner hidden" role="status">
+      <span id="statusBannerText"></span>
+      <button type="button" id="btnOpenLog" class="btn-link hidden">Ver Log</button>
+    </div>
+
+    <div id="toastBanner" class="toast-banner hidden" role="status"></div>
+
+    <section class="table-section">
+      <div class="table-meta-bar">
+        <span id="fieldCountLabel">0 campo(s)</span>
+        <span id="inspectionBadge" class="meta-tag">Origem: XML Estático</span>
+      </div>
+
+      <div class="table-wrapper">
+        <table class="fields-table" id="fieldsTable">
+          <thead>
+            <tr>
+              <th>Field Name</th>
+              <th>Java Class</th>
+              <th>JDBC Type</th>
+              <th>Nullable</th>
+              <th class="col-actions">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="fieldsTableBody">
+            <tr>
+              <td colspan="5" class="empty-state">Carregando campos do relatório...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="query-section" id="querySection">
+      <details id="queryDetails">
+        <summary>Query SQL do Relatório (<code>&lt;queryString&gt;</code>)</summary>
+        <pre class="query-code" id="queryCode">Nenhuma query definida neste relatório.</pre>
+      </details>
+    </section>
+  </div>
+
+  <script nonce="{{nonce}}" src="{{scriptUri}}"></script>
+</body>
+</html>

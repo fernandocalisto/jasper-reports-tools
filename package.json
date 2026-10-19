@@ -4,6 +4,11 @@
   "description": "Extensão profissional e leve para criação, manutenção, compilação, teste e deploy de relatórios JasperReports (.jrxml e .jasper).",
   "version": "0.1.0",
   "publisher": "jasper-tools",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jasper-tools/jasper-reports-tools.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -12,8 +17,18 @@
     "Programming Languages",
     "Snippets"
   ],
+  "keywords": [
+    "jasperreports",
+    "jrxml",
+    "jasper",
+    "jasperserver",
+    "jaspersoft",
+    "reports",
+    "sql"
+  ],
   "activationEvents": [
     "onStartupFinished",
+    "onLanguage:xml",
     "onView:jasper-databases",
     "onView:jasper-servers",
     "onCommand:jasper.addConnection",
@@ -23,6 +38,7 @@
     "onCommand:jasper.testConnection",
     "onCommand:jasper.compileCurrentReport",
     "onCommand:jasper.openPreview",
+    "onCommand:jasper.openFieldViewer",
     "onCommand:jasper.addServer",
     "onCommand:jasper.editServer",
     "onCommand:jasper.deleteServer",
@@ -36,6 +52,61 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "languages": [
+      {
+        "id": "xml",
+        "extensions": [
+          ".jrxml"
+        ],
+        "aliases": [
+          "JRXML",
+          "JasperReports XML"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./media/icons/file-jrxml.svg",
+          "dark": "./media/icons/file-jrxml.svg"
+        }
+      },
+      {
+        "id": "jasper-binary",
+        "extensions": [
+          ".jasper"
+        ],
+        "aliases": [
+          "Jasper Compiled Report"
+        ],
+        "icon": {
+          "light": "./media/icons/file-jasper.svg",
+          "dark": "./media/icons/file-jasper.svg"
+        }
+      }
+    ],
+    "snippets": [
+      {
+        "language": "xml",
+        "path": "./snippets/jasper-snippets.json"
+      }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": "*.jrxml",
+        "url": "./schemas/jasperreport.xsd"
+      }
+    ],
+    "xmlValidation": [
+      {
+        "fileMatch": "*.jrxml",
+        "url": "./schemas/jasperreport.xsd"
+      }
+    ],
+    "iconThemes": [
+      {
+        "id": "jasper-file-icons",
+        "label": "JasperReports Icons",
+        "path": "./media/icons/jasper-icon-theme.json"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {
@@ -99,6 +170,12 @@
         "title": "Abrir Preview Dividido (Split)",
         "category": "Jasper",
         "icon": "$(open-preview)"
+      },
+      {
+        "command": "jasper.openFieldViewer",
+        "title": "Visualizar Campos da Query (Field Viewer)",
+        "category": "Jasper",
+        "icon": "$(table)"
       },
       {
         "command": "jasper.addServer",
@@ -189,6 +266,11 @@
           "command": "jasper.openPreview",
           "when": "resourceExtname == .jrxml",
           "group": "navigation@2"
+        },
+        {
+          "command": "jasper.openFieldViewer",
+          "when": "resourceExtname == .jrxml",
+          "group": "navigation@3"
         }
       ],
       "editor/context": [
@@ -203,14 +285,19 @@
           "group": "1_jasper@2"
         },
         {
-          "command": "jasper.deployJasperToServer",
+          "command": "jasper.openFieldViewer",
           "when": "resourceExtname == .jrxml",
           "group": "1_jasper@3"
         },
         {
-          "command": "jasper.updateJrxmlOnServer",
+          "command": "jasper.deployJasperToServer",
           "when": "resourceExtname == .jrxml",
           "group": "1_jasper@4"
+        },
+        {
+          "command": "jasper.updateJrxmlOnServer",
+          "when": "resourceExtname == .jrxml",
+          "group": "1_jasper@5"
         }
       ],
       "explorer/context": [
@@ -225,14 +312,19 @@
           "group": "1_jasper@2"
         },
         {
-          "command": "jasper.deployJasperToServer",
+          "command": "jasper.openFieldViewer",
           "when": "resourceExtname == .jrxml",
           "group": "1_jasper@3"
         },
         {
-          "command": "jasper.updateJrxmlOnServer",
+          "command": "jasper.deployJasperToServer",
           "when": "resourceExtname == .jrxml",
           "group": "1_jasper@4"
+        },
+        {
+          "command": "jasper.updateJrxmlOnServer",
+          "when": "resourceExtname == .jrxml",
+          "group": "1_jasper@5"
         }
       ],
       "view/item/context": [
@@ -354,7 +446,7 @@
         {
           "command": "jasper.updateJrxmlOnServer",
           "when": "view == jasper-servers && viewItem =~ /^serverReport/",
-          "group": "1_actions@3"
+          "group": "1_jasper@3"
         },
         {
           "command": "jasper.deleteServerResource",
@@ -375,17 +467,25 @@
         "key": "ctrl+shift+v",
         "mac": "cmd+shift+v",
         "when": "editorTextFocus && resourceExtname == .jrxml"
+      },
+      {
+        "command": "jasper.openFieldViewer",
+        "key": "ctrl+shift+f",
+        "mac": "cmd+shift+f",
+        "when": "editorTextFocus && resourceExtname == .jrxml"
       }
     ]
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.9.2",
     "typescript": "^5.3.3"
   }
 }

@@ -14,9 +14,17 @@ export interface JrxmlField {
   description?: string;
 }
 
+export interface JrxmlVariable {
+  name: string;
+  className: string;
+  description?: string;
+  calculation?: string;
+}
+
 export interface JrxmlMetadata {
   parameters: JrxmlParameter[];
   fields: JrxmlField[];
+  variables?: JrxmlVariable[];
   queryString?: string;
 }
 
@@ -216,11 +224,46 @@ export function parseJrxml(xmlContent: string): JrxmlMetadata {
     fields.push(fieldEntry);
   }
 
+  const variables: JrxmlVariable[] = [
+    { name: 'PAGE_NUMBER', className: 'java.lang.Integer', description: 'Número da página atual' },
+    { name: 'PAGE_COUNT', className: 'java.lang.Integer', description: 'Quantidade de registros na página' },
+    { name: 'COLUMN_NUMBER', className: 'java.lang.Integer', description: 'Número da coluna atual' },
+    { name: 'COLUMN_COUNT', className: 'java.lang.Integer', description: 'Quantidade de registros na coluna' },
+    { name: 'REPORT_COUNT', className: 'java.lang.Integer', description: 'Total de registros processados no relatório' }
+  ];
+
+  const varRegex =
+    /<(?:[a-zA-Z0-9_]+:)?variable\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?variable>)/gi;
+  let varMatch: RegExpExecArray | null;
+
+  while ((varMatch = varRegex.exec(cleanedXml)) !== null) {
+    const attrs = parseAttributes(varMatch[1] || '');
+    const rawName = attrs.name?.trim();
+    if (!rawName || variables.some((v) => v.name === rawName)) {
+      continue;
+    }
+
+    const className = attrs.class?.trim() || 'java.lang.Object';
+    const calculation = attrs.calculation?.trim();
+    const body = varMatch[2] || '';
+    const description = extractChildTagContent(body, 'variableDescription');
+
+    const varEntry: JrxmlVariable = {
+      name: rawName,
+      className,
+      ...(calculation ? { calculation } : {}),
+      ...(description ? { description } : calculation ? { description: `Cálculo: ${calculation}` } : {})
+    };
+
+    variables.push(varEntry);
+  }
+
   const queryString = extractChildTagContent(cleanedXml, 'queryString');
 
   return {
     parameters,
     fields,
+    variables,
     ...(queryString !== undefined ? { queryString } : {})
   };
 }
@@ -236,7 +279,7 @@ export function parseJrxmlFile(filePath: string): JrxmlMetadata {
 /**
  * Extrai metadados de um `vscode.TextDocument`, caminho de arquivo ou string XML.
  */
-export function getMetadata(source: string | TextDocumentLike): JrxmlMetadata {
+export function getMetadata(source?: string | TextDocumentLike): JrxmlMetadata {
   if (typeof source === 'object' && source !== null && typeof source.getText === 'function') {
     return parseJrxml(source.getText());
   }
@@ -250,7 +293,7 @@ export function getMetadata(source: string | TextDocumentLike): JrxmlMetadata {
     }
     return parseJrxml(source);
   }
-  return { parameters: [], fields: [] };
+  return { parameters: [], fields: [], variables: [] };
 }
 
 export class JrxmlParser {
@@ -262,7 +305,7 @@ export class JrxmlParser {
     return parseJrxmlFile(filePath);
   }
 
-  public getMetadata(source: string | TextDocumentLike): JrxmlMetadata {
+  public getMetadata(source?: string | TextDocumentLike): JrxmlMetadata {
     return getMetadata(source);
   }
 

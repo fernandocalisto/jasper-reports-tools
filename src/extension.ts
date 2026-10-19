@@ -3,12 +3,15 @@ import { ConnectionManager } from './services/connectionManager';
 import { ServerManager } from './services/serverManager';
 import { JasperServerClient } from './services/jasperServerClient';
 import { RunnerService } from './services/runnerService';
+import { jrxmlParser } from './services/jrxmlParser';
+import { JasperCompletionProvider, PROVIDER_SELECTOR } from './services/completionProvider';
 import { DatabaseTreeProvider } from './providers/databaseTreeProvider';
 import { ServerTreeProvider } from './providers/serverTreeProvider';
 import { registerConnectionCommands } from './commands/connectionCommands';
 import { registerReportCommands } from './commands/reportCommands';
 import { registerServerCommands } from './commands/serverCommands';
 import { PreviewPanel } from './webviewPanels/previewPanel';
+import { FieldViewerPanel } from './webviewPanels/fieldViewerPanel';
 import { ServerFormPanel } from './webviewPanels/serverFormPanel';
 
 let statusBarItem: vscode.StatusBarItem | undefined;
@@ -82,9 +85,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     outputChannel
   );
 
+  const completionDisposable = vscode.languages.registerCompletionItemProvider(
+    PROVIDER_SELECTOR,
+    new JasperCompletionProvider(jrxmlParser),
+    '$',
+    '{',
+    '.',
+    '('
+  );
+
   const saveDocumentListener = vscode.workspace.onDidSaveTextDocument((document) => {
     if (document.fileName.toLowerCase().endsWith('.jrxml')) {
       PreviewPanel.handleDidSaveTextDocument(document);
+      FieldViewerPanel.handleDidSaveTextDocument(document);
     }
   });
 
@@ -98,6 +111,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     serverTreeView,
     statusBarItem,
     connectionListener,
+    completionDisposable,
     saveDocumentListener,
     ...connectionDisposables,
     ...reportDisposables,
@@ -108,6 +122,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 export function deactivate(): void {
   if (PreviewPanel.currentPanel) {
     PreviewPanel.currentPanel.dispose();
+  }
+  if (FieldViewerPanel.currentPanel) {
+    FieldViewerPanel.currentPanel.dispose();
   }
   if (ServerFormPanel.currentPanel) {
     ServerFormPanel.currentPanel.dispose();

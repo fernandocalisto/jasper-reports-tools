@@ -1,0 +1,14 @@
+{
+  "iconDefinitions": {
+    "jrxml-file": {
+      "iconPath": "./file-jrxml.svg"
+    },
+    "jasper-file": {
+      "iconPath": "./file-jasper.svg"
+    }
+  },
+  "fileExtensions": {
+    "jrxml": "jrxml-file",
+    "jasper": "jasper-file"
+  }
+}

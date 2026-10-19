@@ -32,7 +32,7 @@ import java.util.Map;
 public class CommandHandler {
 
     public static final List<String> ACTIONS =
-            Arrays.asList("compile", "fill", "export", "test-conn", "inspect-params");
+            Arrays.asList("compile", "fill", "export", "test-conn", "inspect-params", "inspect-query");
     public static final List<String> FORMATS = Arrays.asList("pdf", "jasper", "jrprint");
 
     /** Variável de ambiente alternativa a {@code --db-pass} (evita expor a senha na linha de comando). */
@@ -74,6 +74,8 @@ public class CommandHandler {
                 return export(format);
             case "inspect-params":
                 return inspectParams();
+            case "inspect-query":
+                return inspectQuery();
             default:
                 throw new IllegalStateException("Ação não mapeada: " + action);
         }
@@ -172,6 +174,29 @@ public class CommandHandler {
         OutputPayload out = OutputPayload.success("inspect-params");
         JasperProcessor.describe(report).forEach(out::meta);
         return out.executionTimeMs(elapsedMs(startNanos));
+    }
+
+    private OutputPayload inspectQuery() throws CliException {
+        Path input = requireInput("jrxml", "jasper");
+        JasperProcessor jp = new JasperProcessor(input);
+        JRReport report = "jrxml".equals(JasperProcessor.extension(input))
+                ? jp.loadDesign(input)
+                : jp.loadReport(input);
+        Map<String, Object> rawParams = parseParams(opts.getParams());
+        try (Connection conn = openConnection(true)) {
+            List<Map<String, Object>> columns = jp.inspectQuery(report, rawParams, conn);
+            OutputPayload out = OutputPayload.success("inspect-query")
+                    .columns(columns)
+                    .meta("columns", columns)
+                    .meta("reportName", report.getName());
+            if (report.getQuery() != null && report.getQuery().getText() != null) {
+                out.meta("queryString", report.getQuery().getText());
+            }
+            return out.executionTimeMs(elapsedMs(startNanos));
+        } catch (SQLException e) {
+            throw new CliException(ErrorType.SQL_ERROR,
+                    "Erro ao inspecionar query no banco: " + CliException.describeSql(e), e);
+        }
     }
 
     // ================================================================== preenchimento compartilhado

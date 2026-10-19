@@ -29,8 +29,14 @@ import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
+import java.sql.JDBCType;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
 import java.sql.Time;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -52,6 +58,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TimeZone;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Centraliza as chamadas ao JasperReports ({@link JasperCompileManager},
@@ -338,6 +346,300 @@ public final class JasperProcessor {
             putIfNotNull(meta, "queryLanguage", query.getLanguage());
         }
         return meta;
+    }
+
+    /**
+     * Inspeciona os metadados JDBC reais das colunas da query SQL do relatório
+     * sem varrer os dados (usando {@link PreparedStatement#getMetaData()} ou {@code WHERE 1=0} / {@code setMaxRows(1)}).
+     */
+    public List<Map<String, Object>> inspectQuery(JRReport report, Map<String, Object> rawParams, Connection conn)
+            throws CliException {
+        JRQuery query = report.getQuery();
+        if (query == null || query.getText() == null || query.getText().trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        Map<String, JRParameter> declared = new HashMap<>();
+        if (report.getParameters() != null) {
+            for (JRParameter p : report.getParameters()) {
+                declared.put(p.getName(), p);
+            }
+        }
+
+        Map<String, Object> convertedParams = new HashMap<>();
+        if (rawParams != null) {
+            for (Map.Entry<String, Object> e : rawParams.entrySet()) {
+                JRParameter p = declared.get(e.getKey());
+                Class<?> target = p != null ? safeValueClass(p) : null;
+                convertedParams.put(e.getKey(), convert(e.getKey(), e.getValue(), target));
+            }
+        }
+
+        String rawSql = query.getText().trim();
+        while (rawSql.endsWith(";")) {
+            rawSql = rawSql.substring(0, rawSql.length() - 1).trim();
+        }
+
+        // 1. Substitui $P!{PARAM} por valor literal ou vazio
+        Pattern bangPattern = Pattern.compile("\\$P!\\{\\s*([^}]+?)\\s*\\}");
+        Matcher bangMatcher = bangPattern.matcher(rawSql);
+        StringBuffer sbBang = new StringBuffer();
+        while (bangMatcher.find()) {
+            String paramName = bangMatcher.group(1).trim();
+            Object val = convertedParams.get(paramName);
+            String replacement = val != null ? String.valueOf(val) : "";
+            bangMatcher.appendReplacement(sbBang, Matcher.quoteReplacement(replacement));
+        }
+        bangMatcher.appendTail(sbBang);
+
+        // 2. Substitui $X{IN|NOTIN|EQUAL|..., col, param} por condição booleana neutra (1=1)
+        Pattern xPattern = Pattern.compile("\\$X\\{[^}]*\\}");
+        String afterX = xPattern.matcher(sbBang.toString()).replaceAll("1=1");
+
+        // 3. Substitui $P{PARAM} por placeholder '?' registrando a ordem dos parâmetros
+        List<String> orderedParams = new ArrayList<>();
+        Pattern pPattern = Pattern.compile("\\$P\\{\\s*([^}]+?)\\s*\\}");
+        Matcher pMatcher = pPattern.matcher(afterX);
+        StringBuffer sbPrepared = new StringBuffer();
+        while (pMatcher.find()) {
+            orderedParams.add(pMatcher.group(1).trim());
+            pMatcher.appendReplacement(sbPrepared, "?");
+        }
+        pMatcher.appendTail(sbPrepared);
+        String preparedSql = sbPrepared.toString().trim();
+
+        // Tenta obter ResultSetMetaData em 3 estágios:
+        // (a) PreparedStatement.getMetaData() direto (sem execução)
+        // (b) Query envelopada com WHERE 1=0
+        // (c) Execução direta com setMaxRows(1)
+        SQLException lastException = null;
+
+        try (PreparedStatement ps = conn.prepareStatement(preparedSql)) {
+            bindInspectionParameters(ps, orderedParams, convertedParams, declared);
+            try {
+                ResultSetMetaData rsmd = ps.getMetaData();
+                if (rsmd != null && rsmd.getColumnCount() > 0) {
+                    return extractColumns(rsmd);
+                }
+            } catch (SQLException e) {
+                lastException = e;
+            }
+        } catch (SQLException e) {
+            lastException = e;
+        }
+
+        String wrappedSql = "SELECT * FROM (\n" + preparedSql + "\n) jasper_inspect_q WHERE 1 = 0";
+        try (PreparedStatement ps = conn.prepareStatement(wrappedSql)) {
+            bindInspectionParameters(ps, orderedParams, convertedParams, declared);
+            ps.setMaxRows(1);
+            try (ResultSet rs = ps.executeQuery()) {
+                ResultSetMetaData rsmd = rs.getMetaData();
+                if (rsmd != null) {
+                    return extractColumns(rsmd);
+                }
+            }
+        } catch (SQLException e) {
+            lastException = e;
+        }
+
+        try (PreparedStatement ps = conn.prepareStatement(preparedSql)) {
+            bindInspectionParameters(ps, orderedParams, convertedParams, declared);
+            ps.setMaxRows(1);
+            try (ResultSet rs = ps.executeQuery()) {
+                ResultSetMetaData rsmd = rs.getMetaData();
+                if (rsmd != null) {
+                    return extractColumns(rsmd);
+                }
+            }
+        } catch (SQLException e) {
+            lastException = e;
+        }
+
+        if (lastException != null) {
+            throw new CliException(ErrorType.SQL_ERROR,
+                    "Falha ao inspecionar metadados da query: " + CliException.describeSql(lastException),
+                    lastException);
+        }
+        return Collections.emptyList();
+    }
+
+    private static void bindInspectionParameters(
+            PreparedStatement ps,
+            List<String> orderedParams,
+            Map<String, Object> convertedParams,
+            Map<String, JRParameter> declared) throws SQLException {
+        for (int i = 0; i < orderedParams.size(); i++) {
+            int paramIdx = i + 1;
+            String name = orderedParams.get(i);
+            Object val = convertedParams.get(name);
+            if (val != null) {
+                if (val instanceof Date && !(val instanceof java.sql.Date)
+                        && !(val instanceof Timestamp) && !(val instanceof Time)) {
+                    ps.setTimestamp(paramIdx, new Timestamp(((Date) val).getTime()));
+                } else {
+                    ps.setObject(paramIdx, val);
+                }
+            } else {
+                JRParameter p = declared.get(name);
+                Class<?> cls = p != null ? safeValueClass(p) : null;
+                ps.setNull(paramIdx, sqlTypeForClass(cls));
+            }
+        }
+    }
+
+    private static int sqlTypeForClass(Class<?> cls) {
+        if (cls == null) {
+            return Types.VARCHAR;
+        }
+        if (cls == String.class) {
+            return Types.VARCHAR;
+        }
+        if (cls == Integer.class || cls == Short.class || cls == Byte.class) {
+            return Types.INTEGER;
+        }
+        if (cls == Long.class || cls == BigInteger.class) {
+            return Types.BIGINT;
+        }
+        if (cls == BigDecimal.class) {
+            return Types.NUMERIC;
+        }
+        if (cls == Double.class || cls == Float.class) {
+            return Types.DOUBLE;
+        }
+        if (cls == Boolean.class) {
+            return Types.BOOLEAN;
+        }
+        if (cls == java.sql.Date.class || cls == LocalDate.class) {
+            return Types.DATE;
+        }
+        if (cls == Time.class || cls == LocalTime.class) {
+            return Types.TIME;
+        }
+        if (Date.class.isAssignableFrom(cls) || cls == LocalDateTime.class) {
+            return Types.TIMESTAMP;
+        }
+        return Types.VARCHAR;
+    }
+
+    private static List<Map<String, Object>> extractColumns(ResultSetMetaData rsmd) throws SQLException {
+        int count = rsmd.getColumnCount();
+        List<Map<String, Object>> cols = new ArrayList<>(count);
+        for (int i = 1; i <= count; i++) {
+            String label = rsmd.getColumnLabel(i);
+            String name = (label != null && !label.trim().isEmpty()) ? label.trim() : rsmd.getColumnName(i);
+            int sqlType = rsmd.getColumnType(i);
+            String jdbcType = resolveJdbcTypeName(rsmd, i, sqlType);
+            int precision = safePrecision(rsmd, i);
+            int scale = safeScale(rsmd, i);
+            int nullable = safeNullable(rsmd, i);
+            String javaClass = resolveJasperJavaClass(rsmd, i, sqlType, precision, scale);
+
+            Map<String, Object> col = new LinkedHashMap<>();
+            col.put("name", name);
+            col.put("jdbcType", jdbcType);
+            col.put("precision", precision);
+            col.put("scale", scale);
+            col.put("nullable", nullable);
+            col.put("javaClass", javaClass);
+            cols.add(col);
+        }
+        return cols;
+    }
+
+    private static String resolveJdbcTypeName(ResultSetMetaData rsmd, int col, int sqlType) {
+        try {
+            return JDBCType.valueOf(sqlType).getName();
+        } catch (IllegalArgumentException ignored) {
+            try {
+                String typeName = rsmd.getColumnTypeName(col);
+                if (typeName != null && !typeName.trim().isEmpty()) {
+                    return typeName.trim().toUpperCase(Locale.ROOT);
+                }
+            } catch (SQLException ignoredSql) {
+                // fallback
+            }
+            return "OTHER";
+        }
+    }
+
+    private static int safePrecision(ResultSetMetaData rsmd, int col) {
+        try {
+            return Math.max(0, rsmd.getPrecision(col));
+        } catch (SQLException | RuntimeException e) {
+            return 0;
+        }
+    }
+
+    private static int safeScale(ResultSetMetaData rsmd, int col) {
+        try {
+            return Math.max(0, rsmd.getScale(col));
+        } catch (SQLException | RuntimeException e) {
+            return 0;
+        }
+    }
+
+    private static int safeNullable(ResultSetMetaData rsmd, int col) {
+        try {
+            return rsmd.isNullable(col);
+        } catch (SQLException | RuntimeException e) {
+            return ResultSetMetaData.columnNullableUnknown;
+        }
+    }
+
+    private static String resolveJasperJavaClass(
+            ResultSetMetaData rsmd, int col, int sqlType, int precision, int scale) {
+        switch (sqlType) {
+            case Types.CHAR:
+            case Types.VARCHAR:
+            case Types.LONGVARCHAR:
+            case Types.NCHAR:
+            case Types.NVARCHAR:
+            case Types.LONGNVARCHAR:
+            case Types.CLOB:
+            case Types.NCLOB:
+                return "java.lang.String";
+            case Types.INTEGER:
+            case Types.SMALLINT:
+            case Types.TINYINT:
+                return "java.lang.Integer";
+            case Types.BIGINT:
+                return "java.lang.Long";
+            case Types.NUMERIC:
+            case Types.DECIMAL:
+                if (scale == 0 && precision > 0 && precision <= 9) {
+                    return "java.lang.Integer";
+                }
+                if (scale == 0 && precision > 9 && precision <= 18) {
+                    return "java.lang.Long";
+                }
+                return "java.math.BigDecimal";
+            case Types.REAL:
+            case Types.FLOAT:
+                return "java.lang.Float";
+            case Types.DOUBLE:
+                return "java.lang.Double";
+            case Types.BOOLEAN:
+            case Types.BIT:
+                return "java.lang.Boolean";
+            case Types.DATE:
+                return "java.util.Date";
+            case Types.TIME:
+            case Types.TIME_WITH_TIMEZONE:
+                return "java.sql.Time";
+            case Types.TIMESTAMP:
+            case Types.TIMESTAMP_WITH_TIMEZONE:
+                return "java.sql.Timestamp";
+            default:
+                try {
+                    String cls = rsmd.getColumnClassName(col);
+                    if (cls != null && !cls.trim().isEmpty()) {
+                        return cls.trim();
+                    }
+                } catch (SQLException | RuntimeException ignored) {
+                    // fallback
+                }
+                return "java.lang.Object";
+        }
     }
 
     // ================================================================== utilitários

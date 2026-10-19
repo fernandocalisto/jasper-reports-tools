@@ -18,7 +18,7 @@ import java.util.Map;
  * <pre>{"status":"ERROR","errorType":"SQL_ERROR","message":"...","stackTraceSnippet":"..."}</pre>
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@JsonPropertyOrder({"status", "action", "outputFile", "executionTimeMs", "pages", "metadata",
+@JsonPropertyOrder({"status", "action", "outputFile", "executionTimeMs", "pages", "columns", "metadata",
         "errorType", "message", "stackTraceSnippet"})
 public class OutputPayload {
 
@@ -37,6 +37,7 @@ public class OutputPayload {
     private String outputFile;
     private Long executionTimeMs;
     private Integer pages;
+    private java.util.List<Map<String, Object>> columns;
     private Map<String, Object> metadata;
     private String errorType;
     private String message;
@@ -88,6 +89,11 @@ public class OutputPayload {
 
     public OutputPayload pages(int pages) {
         this.pages = pages;
+        return this;
+    }
+
+    public OutputPayload columns(java.util.List<Map<String, Object>> columns) {
+        this.columns = columns;
         return this;
     }
 
@@ -219,6 +225,10 @@ public class OutputPayload {
         return pages;
     }
 
+    public java.util.List<Map<String, Object>> getColumns() {
+        return columns;
+    }
+
     public Map<String, Object> getMetadata() {
         return metadata;
     }
@@ -255,6 +265,10 @@ public class OutputPayload {
 
     public void setPages(Integer pages) {
         this.pages = pages;
+    }
+
+    public void setColumns(java.util.List<Map<String, Object>> columns) {
+        this.columns = columns;
     }
 
     public void setMetadata(Map<String, Object> metadata) {

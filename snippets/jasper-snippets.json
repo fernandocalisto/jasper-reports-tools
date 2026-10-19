@@ -1,0 +1,139 @@
+{
+  "Jasper TextField": {
+    "prefix": "jtf",
+    "description": "Bloco <textField> completo com reportElement, textElement e textFieldExpression",
+    "body": [
+      "<textField isBlankWhenNull=\"${1:true}\">",
+      "\t<reportElement x=\"${2:0}\" y=\"${3:0}\" width=\"${4:100}\" height=\"${5:20}\" uuid=\"${6:$UUID}\"/>",
+      "\t<textElement verticalAlignment=\"${7:Middle}\">",
+      "\t\t<font fontName=\"${8:SansSerif}\" size=\"${9:10}\" isBold=\"${10:false}\"/>",
+      "\t</textElement>",
+      "\t<textFieldExpression><![CDATA[${11:\\$F{CAMPO\\}}]]></textFieldExpression>",
+      "</textField>$0"
+    ]
+  },
+  "Jasper Band": {
+    "prefix": "jband",
+    "description": "Bloco <band> com splitType=\"Stretch\"",
+    "body": [
+      "<band height=\"${1:20}\" splitType=\"${2:Stretch}\">",
+      "\t$0",
+      "</band>"
+    ]
+  },
+  "Jasper Parameter": {
+    "prefix": "jparam",
+    "description": "Declaração de <parameter> com defaultValueExpression opcional",
+    "body": [
+      "<parameter name=\"${1:NM_PARAMETRO}\" class=\"${2|java.lang.String,java.lang.Integer,java.lang.Long,java.math.BigDecimal,java.util.Date,java.lang.Boolean|}\" isForPrompting=\"${3:true}\">",
+      "\t<parameterDescription><![CDATA[${4:Descrição do parâmetro}]]></parameterDescription>",
+      "\t<defaultValueExpression><![CDATA[${5:null}]]></defaultValueExpression>",
+      "</parameter>$0"
+    ]
+  },
+  "Jasper Field": {
+    "prefix": "jfield",
+    "description": "Declaração de <field> da query SQL",
+    "body": [
+      "<field name=\"${1:NM_CAMPO}\" class=\"${2|java.lang.String,java.lang.Integer,java.lang.Long,java.math.BigDecimal,java.util.Date,java.sql.Timestamp,java.lang.Boolean,java.lang.Double|}\">",
+      "\t<fieldDescription><![CDATA[${3:}]]></fieldDescription>",
+      "</field>$0"
+    ]
+  },
+  "Jasper Image": {
+    "prefix": "jimg",
+    "description": "Bloco <image> com onErrorType=\"Icon\"",
+    "body": [
+      "<image scaleImage=\"${1:RetainShape}\" onErrorType=\"${2:Icon}\">",
+      "\t<reportElement x=\"${3:0}\" y=\"${4:0}\" width=\"${5:80}\" height=\"${6:40}\" uuid=\"${7:$UUID}\"/>",
+      "\t<imageExpression><![CDATA[${8:\\$P{SUBREPORT_DIR\\} + \"logo.png\"}]]></imageExpression>",
+      "</image>$0"
+    ]
+  },
+  "Jasper Subreport": {
+    "prefix": "jsub",
+    "description": "Bloco <subreport> com connectionExpression e subreportExpression",
+    "body": [
+      "<subreport>",
+      "\t<reportElement x=\"${1:0}\" y=\"${2:0}\" width=\"${3:555}\" height=\"${4:40}\" uuid=\"${5:$UUID}\"/>",
+      "\t<subreportParameter name=\"${6:CD_ATENDIMENTO}\">",
+      "\t\t<subreportParameterExpression><![CDATA[${7:\\$F{CD_ATENDIMENTO\\}}]]></subreportParameterExpression>",
+      "\t</subreportParameter>",
+      "\t<connectionExpression><![CDATA[\\$P{REPORT_CONNECTION}]]></connectionExpression>",
+      "\t<subreportExpression><![CDATA[\\$P{SUBREPORT_DIR} + \"${8:subrelatorio.jasper}\"]]></subreportExpression>",
+      "</subreport>$0"
+    ]
+  },
+  "Jasper Currency TextField (BR)": {
+    "prefix": "jcurrency",
+    "description": "Bloco <textField> formatado em moeda brasileira (R$ #,##0.00)",
+    "body": [
+      "<textField pattern=\"${1:R\\$ #,##0.00}\" isBlankWhenNull=\"true\">",
+      "\t<reportElement x=\"${2:0}\" y=\"${3:0}\" width=\"${4:100}\" height=\"${5:20}\" uuid=\"${6:$UUID}\"/>",
+      "\t<textElement textAlignment=\"${7:Right}\" verticalAlignment=\"Middle\">",
+      "\t\t<font fontName=\"SansSerif\" size=\"${8:10}\"/>",
+      "\t</textElement>",
+      "\t<textFieldExpression><![CDATA[${9:\\$F{VL_TOTAL\\}}]]></textFieldExpression>",
+      "</textField>$0"
+    ]
+  },
+  "Jasper Date TextField (BR)": {
+    "prefix": "jdate",
+    "description": "Bloco <textField> formatado em data brasileira (dd/MM/yyyy)",
+    "body": [
+      "<textField pattern=\"${1:dd/MM/yyyy}\" isBlankWhenNull=\"true\">",
+      "\t<reportElement x=\"${2:0}\" y=\"${3:0}\" width=\"${4:80}\" height=\"${5:20}\" uuid=\"${6:$UUID}\"/>",
+      "\t<textElement textAlignment=\"${7:Center}\" verticalAlignment=\"Middle\">",
+      "\t\t<font fontName=\"SansSerif\" size=\"${8:10}\"/>",
+      "\t</textElement>",
+      "\t<textFieldExpression><![CDATA[${9:\\$F{DT_NASCIMENTO\\}}]]></textFieldExpression>",
+      "</textField>$0"
+    ]
+  },
+  "Jasper Page Footer": {
+    "prefix": "jpage",
+    "description": "Bloco <pageFooter> com numeração de página Page $V{PAGE_NUMBER} of $V{PAGE_COUNT}",
+    "body": [
+      "<pageFooter>",
+      "\t<band height=\"${1:20}\" splitType=\"Stretch\">",
+      "\t\t<textField>",
+      "\t\t\t<reportElement x=\"${2:355}\" y=\"0\" width=\"${3:160}\" height=\"20\" uuid=\"${4:$UUID}\"/>",
+      "\t\t\t<textElement textAlignment=\"Right\" verticalAlignment=\"Middle\">",
+      "\t\t\t\t<font fontName=\"SansSerif\" size=\"9\"/>",
+      "\t\t\t</textElement>",
+      "\t\t\t<textFieldExpression><![CDATA[\"Page \" + \\$V{PAGE_NUMBER} + \" of \"]]></textFieldExpression>",
+      "\t\t</textField>",
+      "\t\t<textField evaluationTime=\"Report\">",
+      "\t\t\t<reportElement x=\"${5:515}\" y=\"0\" width=\"${6:40}\" height=\"20\" uuid=\"${7:$UUID}\"/>",
+      "\t\t\t<textElement textAlignment=\"Left\" verticalAlignment=\"Middle\">",
+      "\t\t\t\t<font fontName=\"SansSerif\" size=\"9\"/>",
+      "\t\t\t</textElement>",
+      "\t\t\t<textFieldExpression><![CDATA[\" \" + \\$V{PAGE_COUNT}]]></textFieldExpression>",
+      "\t\t</textField>",
+      "\t</band>",
+      "</pageFooter>$0"
+    ]
+  },
+  "Jasper StaticText": {
+    "prefix": "jstatic",
+    "description": "Bloco <staticText> com reportElement, textElement e text",
+    "body": [
+      "<staticText>",
+      "\t<reportElement x=\"${1:0}\" y=\"${2:0}\" width=\"${3:100}\" height=\"${4:20}\" uuid=\"${5:$UUID}\"/>",
+      "\t<textElement verticalAlignment=\"Middle\">",
+      "\t\t<font fontName=\"SansSerif\" size=\"${6:10}\" isBold=\"${7:true}\"/>",
+      "\t</textElement>",
+      "\t<text><![CDATA[${8:Título}]]></text>",
+      "</staticText>$0"
+    ]
+  },
+  "Jasper Variable": {
+    "prefix": "jvar",
+    "description": "Declaração de <variable> com calculation e variableExpression",
+    "body": [
+      "<variable name=\"${1:VL_SOMA}\" class=\"${2|java.math.BigDecimal,java.lang.Integer,java.lang.Long,java.lang.Double,java.lang.String|}\" calculation=\"${3|Sum,Count,Average,Lowest,Highest,Nothing|}\">",
+      "\t<variableExpression><![CDATA[${4:\\$F{VL_TOTAL\\}}]]></variableExpression>",
+      "</variable>$0"
+    ]
+  }
+}

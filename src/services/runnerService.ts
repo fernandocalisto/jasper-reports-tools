@@ -6,12 +6,29 @@ import { buildJdbcUrl, DatabaseProfile } from '../models/database';
 
 export { buildJdbcUrl };
 
+export interface InspectQueryColumn {
+  name: string;
+  jdbcType: string;
+  precision: number;
+  scale: number;
+  nullable: number;
+  javaClass: string;
+}
+
+export interface InspectQueryOptions {
+  reportPath: string;
+  dbProfile: DatabaseProfile;
+  password?: string;
+  params?: Record<string, any>;
+}
+
 export interface CliSuccessResponse {
   status: 'SUCCESS';
   action: string;
   outputFile?: string;
   executionTimeMs: number;
   pages?: number;
+  columns?: InspectQueryColumn[];
   metadata?: Record<string, any>;
 }
 
@@ -408,6 +425,49 @@ export class RunnerService {
   }
 
   /**
+   * Inspeciona os metadados JDBC reais das colunas da query SQL do relatório via `--action inspect-query`.
+   */
+  public async inspectQuery(options: InspectQueryOptions): Promise<CliSuccessResponse> {
+    if (!options.reportPath) {
+      throw new RunnerCliError(
+        'INVALID_ARGUMENT',
+        'O caminho do relatório (reportPath) é obrigatório para inspectQuery.'
+      );
+    }
+
+    const dbProfile = options.dbProfile;
+    const jdbcUrl = buildJdbcUrl(dbProfile);
+    const args: string[] = [
+      '--action',
+      'inspect-query',
+      '--input',
+      options.reportPath,
+      '--db-url',
+      jdbcUrl
+    ];
+
+    if (dbProfile.user) {
+      args.push('--db-user', dbProfile.user);
+    }
+    if (options.password) {
+      args.push('--db-pass', options.password);
+    }
+    if (dbProfile.driver === 'custom') {
+      if (dbProfile.customDriverPath) {
+        args.push('--custom-driver-jar', dbProfile.customDriverPath);
+      }
+      if (dbProfile.customDriverClass) {
+        args.push('--custom-driver-class', dbProfile.customDriverClass);
+      }
+    }
+    if (options.params && Object.keys(options.params).length > 0) {
+      args.push('--params', JSON.stringify(options.params));
+    }
+
+    return this.executeCli(args, options.password);
+  }
+
+  /**
    * Executa o `jasper-cli.jar` via `child_process.execFile` e converte a saída JSON (`OutputPayload`).
    */
   private async executeCli(
@@ -453,6 +513,7 @@ export class RunnerService {
                 outputFile: parsedPayload.outputFile,
                 executionTimeMs: parsedPayload.executionTimeMs ?? 0,
                 pages: parsedPayload.pages,
+                columns: parsedPayload.columns ?? parsedPayload.metadata?.columns,
                 metadata: parsedPayload.metadata
               });
               return;

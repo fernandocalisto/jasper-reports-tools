@@ -4,6 +4,7 @@ import { ConnectionManager } from '../services/connectionManager';
 import { RunnerCliError, RunnerService } from '../services/runnerService';
 import { jrxmlParser } from '../services/jrxmlParser';
 import { PreviewPanel } from '../webviewPanels/previewPanel';
+import { FieldViewerPanel } from '../webviewPanels/fieldViewerPanel';
 
 export function resolveTargetJrxmlPath(uriArg?: vscode.Uri): {
   filePath?: string;
@@ -149,5 +150,38 @@ export function registerReportCommands(
     }
   );
 
-  return [compileCurrentReportCmd, openPreviewCmd];
+  const openFieldViewerCmd = vscode.commands.registerCommand(
+    'jasper.openFieldViewer',
+    async (uriArg?: vscode.Uri) => {
+      const { filePath, document } = resolveTargetJrxmlPath(uriArg);
+
+      if (!filePath) {
+        void vscode.window.showWarningMessage(
+          'Nenhum arquivo aberto no editor. Abra um relatório .jrxml para visualizar os campos.'
+        );
+        return;
+      }
+
+      if (path.extname(filePath).toLowerCase() !== '.jrxml') {
+        void vscode.window.showWarningMessage(
+          `O arquivo "${path.basename(filePath)}" não possui extensão .jrxml.`
+        );
+        return;
+      }
+
+      if (document && document.isDirty) {
+        await document.save();
+      }
+
+      FieldViewerPanel.createOrShow(
+        context,
+        connectionManager,
+        runnerService,
+        outputChannel,
+        filePath
+      );
+    }
+  );
+
+  return [compileCurrentReportCmd, openPreviewCmd, openFieldViewerCmd];
 }

@@ -368,7 +368,7 @@ export class RunnerService {
     if (outputPath) {
       args.push('--output', outputPath);
     }
-    return this.executeCli(args);
+    return this.executeCli(args, undefined, path.dirname(jrxmlPath));
   }
 
   /**
@@ -414,14 +414,14 @@ export class RunnerService {
       args.push('--params', JSON.stringify(options.params));
     }
 
-    return this.executeCli(args, options.password);
+    return this.executeCli(args, options.password, path.dirname(input));
   }
 
   /**
    * Inspeciona parâmetros, campos e query de um relatório via `--action inspect-params`.
    */
   public async inspectParams(reportPath: string): Promise<CliSuccessResponse> {
-    return this.executeCli(['--action', 'inspect-params', '--input', reportPath]);
+    return this.executeCli(['--action', 'inspect-params', '--input', reportPath], undefined, path.dirname(reportPath));
   }
 
   /**
@@ -464,7 +464,7 @@ export class RunnerService {
       args.push('--params', JSON.stringify(options.params));
     }
 
-    return this.executeCli(args, options.password);
+    return this.executeCli(args, options.password, path.dirname(options.reportPath));
   }
 
   /**
@@ -472,7 +472,8 @@ export class RunnerService {
    */
   private async executeCli(
     cliArgs: string[],
-    password?: string
+    password?: string,
+    cwd?: string
   ): Promise<CliSuccessResponse> {
     const jarPath = this.ensureJarExists(true);
 
@@ -497,6 +498,7 @@ export class RunnerService {
           timeout: this.timeoutMs,
           windowsHide: true,
           maxBuffer: 10 * 1024 * 1024,
+          cwd: cwd ?? process.cwd(),
           env: {
             ...process.env,
             ...(password ? { JASPER_CLI_DB_PASS: password } : {})

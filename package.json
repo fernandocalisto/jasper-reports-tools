@@ -3,11 +3,11 @@
   "displayName": "JasperReports Developer Tools",
   "description": "Extensão profissional e leve para criação, manutenção, compilação, teste e deploy de relatórios JasperReports (.jrxml e .jasper).",
   "version": "0.1.0",
-  "publisher": "jasper-tools",
+  "publisher": "fernandocalisto",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jasper-tools/jasper-reports-tools.git"
+    "url": "https://github.com/fernandocalisto/jasper-reports-tools.git"
   },
   "engines": {
     "vscode": "^1.85.0"

@@ -48,7 +48,16 @@
     "onCommand:jasper.deployJasperToServer",
     "onCommand:jasper.updateJrxmlOnServer",
     "onCommand:jasper.deleteServerResource",
-    "onCommand:jasper.uploadNewJrxmlToServer"
+    "onCommand:jasper.uploadNewJrxmlToServer",
+    "onCommand:jasper.searchServerResources",
+    "onCommand:jasper.clearServerSearch",
+    "onCommand:jasper.copyServerResource",
+    "onCommand:jasper.pasteServerResource",
+    "onCommand:jasper.copyServerResourcePath",
+    "onCommand:jasper.toggleServerSelectionMode",
+    "onCommand:jasper.downloadSelectedServerResources",
+    "onCommand:jasper.navigateServerBreadcrumb",
+    "onCommand:jasper.navigateServerUp"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -236,6 +245,60 @@
         "title": "Enviar Novo .jrxml para o Servidor",
         "category": "Jasper",
         "icon": "$(new-file)"
+      },
+      {
+        "command": "jasper.searchServerResources",
+        "title": "Buscar no JasperServer",
+        "category": "Jasper",
+        "icon": "$(search)"
+      },
+      {
+        "command": "jasper.clearServerSearch",
+        "title": "Limpar Busca no JasperServer",
+        "category": "Jasper",
+        "icon": "$(close)"
+      },
+      {
+        "command": "jasper.copyServerResource",
+        "title": "Copiar Recurso",
+        "category": "Jasper",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "jasper.pasteServerResource",
+        "title": "Colar Recurso do Servidor",
+        "category": "Jasper",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "jasper.copyServerResourcePath",
+        "title": "Copiar Caminho no Servidor",
+        "category": "Jasper",
+        "icon": "$(link)"
+      },
+      {
+        "command": "jasper.toggleServerSelectionMode",
+        "title": "Alternar Modo Seleção",
+        "category": "Jasper",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "jasper.downloadSelectedServerResources",
+        "title": "Baixar Selecionados",
+        "category": "Jasper",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "jasper.navigateServerBreadcrumb",
+        "title": "Navegar pelo Breadcrumb",
+        "category": "Jasper",
+        "icon": "$(list-tree)"
+      },
+      {
+        "command": "jasper.navigateServerUp",
+        "title": "Subir um Nível no Repositório",
+        "category": "Jasper",
+        "icon": "$(arrow-up)"
       }
     ],
     "menus": {
@@ -246,14 +309,39 @@
           "group": "navigation"
         },
         {
-          "command": "jasper.addServer",
+          "command": "jasper.searchServerResources",
           "when": "view == jasper-servers",
           "group": "navigation@1"
         },
         {
+          "command": "jasper.clearServerSearch",
+          "when": "view == jasper-servers && jasper.searchActive",
+          "group": "navigation@2"
+        },
+        {
+          "command": "jasper.navigateServerBreadcrumb",
+          "when": "view == jasper-servers",
+          "group": "navigation@3"
+        },
+        {
+          "command": "jasper.toggleServerSelectionMode",
+          "when": "view == jasper-servers",
+          "group": "navigation@4"
+        },
+        {
+          "command": "jasper.downloadSelectedServerResources",
+          "when": "view == jasper-servers && selectionCount > 0",
+          "group": "navigation@5"
+        },
+        {
           "command": "jasper.refreshServerTree",
           "when": "view == jasper-servers",
-          "group": "navigation@2"
+          "group": "navigation@6"
+        },
+        {
+          "command": "jasper.addServer",
+          "when": "view == jasper-servers",
+          "group": "navigation@7"
         }
       ],
       "editor/title": [
@@ -298,6 +386,10 @@
           "command": "jasper.updateJrxmlOnServer",
           "when": "resourceExtname == .jrxml",
           "group": "1_jasper@5"
+        },
+        {
+          "command": "jasper.pasteServerResource",
+          "group": "1_jasper@6"
         }
       ],
       "explorer/context": [
@@ -325,6 +417,10 @@
           "command": "jasper.updateJrxmlOnServer",
           "when": "resourceExtname == .jrxml",
           "group": "1_jasper@5"
+        },
+        {
+          "command": "jasper.pasteServerResource",
+          "group": "1_jasper@6"
         }
       ],
       "view/item/context": [
@@ -452,6 +548,31 @@
           "command": "jasper.deleteServerResource",
           "when": "view == jasper-servers && viewItem =~ /^serverReport/",
           "group": "2_modification@1"
+        },
+        {
+          "command": "jasper.copyServerResource",
+          "when": "view == jasper-servers && viewItem =~ /^serverReport/",
+          "group": "3_clipboard@1"
+        },
+        {
+          "command": "jasper.copyServerResource",
+          "when": "view == jasper-servers && viewItem == serverFolder",
+          "group": "3_clipboard@1"
+        },
+        {
+          "command": "jasper.copyServerResourcePath",
+          "when": "view == jasper-servers",
+          "group": "3_clipboard@2"
+        },
+        {
+          "command": "jasper.navigateServerBreadcrumb",
+          "when": "view == jasper-servers",
+          "group": "3_clipboard@3"
+        },
+        {
+          "command": "jasper.downloadSelectedServerResources",
+          "when": "view == jasper-servers && selectionCount > 0",
+          "group": "4_multiselect@1"
         }
       ]
     },
@@ -473,6 +594,56 @@
         "key": "ctrl+shift+f",
         "mac": "cmd+shift+f",
         "when": "editorTextFocus && resourceExtname == .jrxml"
+      },
+      {
+        "command": "jasper.searchServerResources",
+        "key": "ctrl+f",
+        "mac": "cmd+f",
+        "when": "view == jasper-servers"
+      },
+      {
+        "command": "jasper.copyServerResource",
+        "key": "ctrl+c",
+        "mac": "cmd+c",
+        "when": "view == jasper-servers && viewItem =~ /^serverReport/"
+      },
+      {
+        "command": "jasper.copyServerResource",
+        "key": "ctrl+c",
+        "mac": "cmd+c",
+        "when": "view == jasper-servers && viewItem == serverFolder"
+      },
+      {
+        "command": "jasper.pasteServerResource",
+        "key": "ctrl+v",
+        "mac": "cmd+v",
+        "when": "explorerViewletFocus"
+      },
+      {
+        "command": "jasper.copyServerResourcePath",
+        "key": "ctrl+shift+c",
+        "mac": "cmd+shift+c",
+        "when": "view == jasper-servers"
+      },
+      {
+        "command": "jasper.refreshServerTree",
+        "key": "f5",
+        "when": "view == jasper-servers"
+      },
+      {
+        "command": "jasper.clearServerSearch",
+        "key": "escape",
+        "when": "view == jasper-servers && jasper.searchActive"
+      },
+      {
+        "command": "jasper.navigateServerUp",
+        "key": "backspace",
+        "when": "view == jasper-servers && listFocus && !inputFocus"
+      },
+      {
+        "command": "jasper.downloadServerReport",
+        "key": "enter",
+        "when": "view == jasper-servers && listFocus && viewItem =~ /^serverReport/"
       }
     ]
   },

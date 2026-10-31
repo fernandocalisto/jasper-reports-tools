@@ -7,6 +7,8 @@ import { jrxmlParser } from './services/jrxmlParser';
 import { JasperCompletionProvider, PROVIDER_SELECTOR } from './services/completionProvider';
 import { DatabaseTreeProvider } from './providers/databaseTreeProvider';
 import { ServerTreeProvider } from './providers/serverTreeProvider';
+import { ServerSearchController } from './controllers/serverSearchController';
+import { ServerClipboardController } from './controllers/serverClipboardController';
 import { registerConnectionCommands } from './commands/connectionCommands';
 import { registerReportCommands } from './commands/reportCommands';
 import { registerServerCommands } from './commands/serverCommands';
@@ -51,8 +53,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const serverTreeView = vscode.window.createTreeView('jasper-servers', {
     treeDataProvider: serverTreeProvider,
-    showCollapseAll: true
+    showCollapseAll: true,
+    canSelectMany: true,
+    manageCheckboxStateManually: true
   });
+
+  const treeBindingDisposable = serverTreeProvider.bindTreeView(serverTreeView);
+  const searchController = new ServerSearchController(
+    serverTreeProvider,
+    serverTreeView,
+    outputChannel
+  );
+  const clipboardController = new ServerClipboardController(
+    serverManager,
+    serverClient,
+    serverTreeProvider,
+    serverTreeView,
+    outputChannel
+  );
 
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   statusBarItem.command = 'jasper.setActiveConnection';
@@ -82,7 +100,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     serverClient,
     serverTreeProvider,
     runnerService,
-    outputChannel
+    outputChannel,
+    serverTreeView,
+    searchController,
+    clipboardController
   );
 
   const completionDisposable = vscode.languages.registerCompletionItemProvider(
@@ -109,6 +130,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     serverTreeProvider,
     treeView,
     serverTreeView,
+    treeBindingDisposable,
+    searchController,
+    clipboardController,
     statusBarItem,
     connectionListener,
     completionDisposable,

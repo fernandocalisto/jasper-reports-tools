@@ -10,7 +10,13 @@ import {
 import { ServerManager } from '../services/serverManager';
 import { JasperServerClient } from '../services/jasperServerClient';
 import { RunnerCliError, RunnerService } from '../services/runnerService';
-import { ServerTreeItem, ServerTreeProvider } from '../providers/serverTreeProvider';
+import {
+  BreadcrumbSegment,
+  ServerTreeItem,
+  ServerTreeProvider
+} from '../providers/serverTreeProvider';
+import { ServerSearchController } from '../controllers/serverSearchController';
+import { ServerClipboardController } from '../controllers/serverClipboardController';
 import {
   ServerFormPanel,
   ServerTestResult,
@@ -255,7 +261,10 @@ export function registerServerCommands(
   serverClient: JasperServerClient,
   serverTreeProvider: ServerTreeProvider,
   runnerService: RunnerService,
-  outputChannel: vscode.OutputChannel
+  outputChannel: vscode.OutputChannel,
+  serverTreeView?: vscode.TreeView<ServerTreeItem>,
+  searchController?: ServerSearchController,
+  clipboardController?: ServerClipboardController
 ): vscode.Disposable[] {
   const testServerCallback = async (
     payload: WebviewServerPayload
@@ -383,8 +392,28 @@ export function registerServerCommands(
 
   const refreshServerTreeCmd = vscode.commands.registerCommand(
     'jasper.refreshServerTree',
-    (item?: ServerTreeItem) => {
-      serverTreeProvider.refresh(item);
+    async (item?: ServerTreeItem) => {
+      const targetLabel =
+        item?.kind === 'server'
+          ? item.profile.name
+          : item?.kind === 'resource' && item.resource
+          ? item.resource.name
+          : 'JasperServer Explorer';
+
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: `JasperServer: Recarregando "${targetLabel}" do servidor...`,
+          cancellable: false
+        },
+        async () => {
+          await serverTreeProvider.reloadFromServer(item);
+        }
+      );
+
+      void vscode.window.showInformationMessage(
+        `Repositório "${targetLabel}" sincronizado com o servidor.`
+      );
     }
   );
 
@@ -863,6 +892,245 @@ export function registerServerCommands(
     }
   );
 
+  // ===========================================================================
+  // Etapa 7: JasperServer UX Commands (Search, Copy/Paste, Multi-Select, Nav)
+  // ===========================================================================
+
+  const searchServerResourcesCmd = vscode.commands.registerCommand(
+    'jasper.searchServerResources',
+    () => {
+      searchController?.openSearch();
+    }
+  );
+
+  const clearServerSearchCmd = vscode.commands.registerCommand(
+    'jasper.clearServerSearch',
+    () => {
+      searchController?.clearSearch();
+    }
+  );
+
+  const copyServerResourceCmd = vscode.commands.registerCommand(
+    'jasper.copyServerResource',
+    async (item?: ServerTreeItem, selectedItems?: readonly ServerTreeItem[]) => {
+      if (clipboardController) {
+        await clipboardController.copyResources(item, selectedItems);
+      }
+    }
+  );
+
+  const pasteServerResourceCmd = vscode.commands.registerCommand(
+    'jasper.pasteServerResource',
+    async (targetUri?: vscode.Uri) => {
+      if (clipboardController) {
+        await clipboardController.pasteResources(targetUri);
+      }
+    }
+  );
+
+  const copyServerResourcePathCmd = vscode.commands.registerCommand(
+    'jasper.copyServerResourcePath',
+    async (item?: ServerTreeItem, selectedItems?: readonly ServerTreeItem[]) => {
+      if (clipboardController) {
+        await clipboardController.copyResourcePath(item, selectedItems);
+      }
+    }
+  );
+
+  const toggleServerSelectionModeCmd = vscode.commands.registerCommand(
+    'jasper.toggleServerSelectionMode',
+    () => {
+      const enabled = serverTreeProvider.toggleSelectionMode();
+      vscode.window.setStatusBarMessage(
+        enabled
+          ? '$(check-all) JasperServer: Modo de seleção múltipla ativado (marque os checkboxes).'
+          : '$(close) JasperServer: Modo de seleção múltipla desativado.',
+        3500
+      );
+    }
+  );
+
+  const downloadSelectedServerResourcesCmd = vscode.commands.registerCommand(
+    'jasper.downloadSelectedServerResources',
+    async () => {
+      const selectedItems = serverTreeProvider
+        .getCheckedResourceItems()
+        .filter(
+          (entry): entry is ServerTreeItem & {
+            resource: NonNullable<ServerTreeItem['resource']>;
+          } =>
+            entry.kind === 'resource' &&
+            entry.resource !== undefined &&
+            entry.resource.resourceType !== 'folder'
+        );
+
+      if (selectedItems.length === 0) {
+        void vscode.window.showWarningMessage(
+          'Nenhum arquivo selecionado para download no JasperServer Explorer.'
+        );
+        return;
+      }
+
+      let firstJrxmlPath: string | undefined;
+      const downloadedPaths: string[] = [];
+
+      try {
+        await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: `JasperServer: Baixando ${selectedItems.length} recurso(s) selecionado(s)...`,
+            cancellable: false
+          },
+          async (progress) => {
+            for (let i = 0; i < selectedItems.length; i++) {
+              const entry = selectedItems[i];
+              const targetProfile = entry.profile;
+              const targetResource = entry.resource;
+
+              progress.report({
+                message: `(${i + 1}/${selectedItems.length}) ${targetResource.name}`,
+                increment: (1 / selectedItems.length) * 100
+              });
+
+              const password = await serverManager.getPassword(targetProfile.id);
+              const content = await serverClient.downloadResource(
+                targetResource.uri,
+                targetProfile,
+                password
+              );
+
+              const localFilePath = buildLocalDownloadPath(
+                targetProfile,
+                targetResource.uri,
+                targetResource.name
+              );
+              fs.mkdirSync(path.dirname(localFilePath), { recursive: true });
+              fs.writeFileSync(localFilePath, content, 'utf8');
+
+              const resourceType: 'reportUnit' | 'jrxml' | 'jasper' | 'other' =
+                targetResource.resourceType === 'reportUnit' ||
+                targetResource.resourceType === 'jrxml' ||
+                targetResource.resourceType === 'jasper'
+                  ? targetResource.resourceType
+                  : 'jrxml';
+
+              await serverManager.registerDownloadedOrigin(localFilePath, {
+                serverId: targetProfile.id,
+                resourceUri: targetResource.uri,
+                parentFolderUri: targetResource.parentFolderUri || '/',
+                resourceName: targetResource.name,
+                resourceType
+              });
+
+              downloadedPaths.push(localFilePath);
+              if (!firstJrxmlPath && localFilePath.toLowerCase().endsWith('.jrxml')) {
+                firstJrxmlPath = localFilePath;
+              }
+
+              outputChannel.appendLine(
+                `[${new Date().toLocaleTimeString('pt-BR')}] [JasperServer] Recurso "${targetResource.uri}" baixado para: ${localFilePath}`
+              );
+            }
+          }
+        );
+
+        if (firstJrxmlPath) {
+          const document = await vscode.workspace.openTextDocument(
+            vscode.Uri.file(firstJrxmlPath)
+          );
+          await vscode.window.showTextDocument(document, { preview: false });
+        }
+
+        void vscode.window.showInformationMessage(
+          `${downloadedPaths.length} recurso(s) baixado(s) do JasperServer com sucesso.`
+        );
+      } catch (error) {
+        const errMessage =
+          error instanceof Error
+            ? error.message
+            : 'Falha ao baixar recursos selecionados.';
+        void vscode.window.showErrorMessage(`Falha no download em lote: ${errMessage}`);
+      }
+    }
+  );
+
+  const navigateServerBreadcrumbCmd = vscode.commands.registerCommand(
+    'jasper.navigateServerBreadcrumb',
+    async (item?: ServerTreeItem) => {
+      const segments = serverTreeProvider.getBreadcrumbs(item);
+      if (segments.length === 0) {
+        void vscode.window.showInformationMessage(
+          'Selecione um item no JasperServer Explorer para navegar pelos breadcrumbs.'
+        );
+        return;
+      }
+
+      const pickItems: Array<vscode.QuickPickItem & { segment: BreadcrumbSegment }> =
+        segments.map((seg, idx) => {
+          const pathTrail = segments
+            .slice(0, idx + 1)
+            .map((s) => s.label)
+            .join(' > ');
+          const icon = seg.isServer
+            ? '$(server)'
+            : seg.resourceType === 'folder'
+            ? '$(folder)'
+            : '$(file-code)';
+          return {
+            label: `${icon} ${seg.label}`,
+            description: seg.uri,
+            detail: pathTrail,
+            segment: seg
+          };
+        });
+
+      const chosen = await vscode.window.showQuickPick(pickItems, {
+        title: `Breadcrumbs: ${serverTreeProvider.getBreadcrumbText(item)}`,
+        placeHolder: 'Clique em um nível para navegar diretamente na árvore'
+      });
+
+      if (!chosen || !serverTreeView) {
+        return;
+      }
+
+      const targetTreeItem = serverTreeProvider.findTreeItemByResource(
+        chosen.segment.profileId,
+        chosen.segment.uri
+      );
+      if (targetTreeItem) {
+        serverTreeProvider.setCurrentBreadcrumbItem(targetTreeItem);
+        await serverTreeView.reveal(targetTreeItem, {
+          select: true,
+          focus: true,
+          expand: true
+        });
+      }
+    }
+  );
+
+  const navigateServerUpCmd = vscode.commands.registerCommand(
+    'jasper.navigateServerUp',
+    async () => {
+      if (!serverTreeView) {
+        return;
+      }
+      const current =
+        serverTreeView.selection[0] ?? serverTreeProvider.getCurrentBreadcrumbItem();
+      if (!current) {
+        return;
+      }
+      const parent = await serverTreeProvider.getParent(current);
+      if (parent) {
+        serverTreeProvider.setCurrentBreadcrumbItem(parent);
+        await serverTreeView.reveal(parent, {
+          select: true,
+          focus: true,
+          expand: true
+        });
+      }
+    }
+  );
+
   return [
     addServerCmd,
     editServerCmd,
@@ -873,6 +1141,15 @@ export function registerServerCommands(
     deployJasperToServerCmd,
     updateJrxmlOnServerCmd,
     uploadNewJrxmlToServerCmd,
-    deleteServerResourceCmd
+    deleteServerResourceCmd,
+    searchServerResourcesCmd,
+    clearServerSearchCmd,
+    copyServerResourceCmd,
+    pasteServerResourceCmd,
+    copyServerResourcePathCmd,
+    toggleServerSelectionModeCmd,
+    downloadSelectedServerResourcesCmd,
+    navigateServerBreadcrumbCmd,
+    navigateServerUpCmd
   ];
 }

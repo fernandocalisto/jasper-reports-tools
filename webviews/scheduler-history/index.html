@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'none'; style-src {{cspSource}} 'unsafe-inline'; script-src 'nonce-{{nonce}}';"
+  />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Histórico de Execuções (JasperServer)</title>
+  <link rel="stylesheet" href="{{styleUri}}" />
+</head>
+<body>
+  <main class="history-container">
+    <header class="history-header">
+      <div>
+        <h1 id="historyTitle">Histórico de Execuções</h1>
+        <p id="historySubtitle" class="history-subtitle">Carregando histórico do JasperServer...</p>
+      </div>
+      <div class="header-actions">
+        <button type="button" id="refreshHistoryBtn" class="btn btn-secondary">
+          ↻ Atualizar
+        </button>
+        <button type="button" id="runJobNowBtn" class="btn btn-primary">
+          ▶ Executar Agora
+        </button>
+      </div>
+    </header>
+
+    <div id="errorBanner" class="error-banner hidden" role="alert"></div>
+
+    <div class="table-card">
+      <table class="executions-table">
+        <thead>
+          <tr>
+            <th>Status</th>
+            <th>Início</th>
+            <th>Fim (Duração)</th>
+            <th>Output</th>
+            <th>Erro</th>
+            <th class="center-col">Parâmetros</th>
+            <th class="center-col">Ações</th>
+          </tr>
+        </thead>
+        <tbody id="executionsTableBody"></tbody>
+      </table>
+    </div>
+
+    <footer class="pagination-bar">
+      <span id="paginationInfo">Exibindo 0 execuções</span>
+      <div class="pagination-buttons">
+        <button type="button" id="prevPageBtn" class="btn btn-secondary btn-sm" disabled>
+          ← Anterior
+        </button>
+        <button type="button" id="nextPageBtn" class="btn btn-secondary btn-sm" disabled>
+          Próxima →
+        </button>
+      </div>
+    </footer>
+  </main>
+
+  <!-- Modal de Detalhes / Parâmetros / Stack Trace -->
+  <div id="detailsModalBackdrop" class="modal-backdrop hidden">
+    <div class="modal-dialog" role="dialog" aria-labelledby="detailsModalTitle">
+      <header class="modal-header">
+        <h2 id="detailsModalTitle">Detalhes da Execução</h2>
+        <button type="button" id="closeDetailsModalBtn" class="icon-btn">✕</button>
+      </header>
+      <div id="detailsModalContent" class="modal-body"></div>
+      <footer class="modal-footer">
+        <button type="button" id="closeDetailsFooterBtn" class="btn btn-secondary">Fechar</button>
+      </footer>
+    </div>
+  </div>
+
+  <script nonce="{{nonce}}" src="{{scriptUri}}"></script>
+</body>
+</html>

@@ -22,6 +22,17 @@ import {
   ServerTestResult,
   WebviewServerPayload
 } from '../webviewPanels/serverFormPanel';
+import {
+  JasperServerSchedulerService,
+  ReportJob,
+  formatTriggerLabel
+} from '../services/jasperServerScheduler';
+import {
+  SchedulerTreeItem,
+  SchedulerTreeProvider
+} from '../providers/schedulerTreeProvider';
+import { SchedulerJobEditorPanel } from '../webviewPanels/schedulerJobEditorPanel';
+import { SchedulerHistoryPanel } from '../webviewPanels/schedulerHistoryPanel';
 import { resolveTargetJrxmlPath } from './reportCommands';
 
 interface ServerQuickPickItem extends vscode.QuickPickItem {
@@ -264,7 +275,9 @@ export function registerServerCommands(
   outputChannel: vscode.OutputChannel,
   serverTreeView?: vscode.TreeView<ServerTreeItem>,
   searchController?: ServerSearchController,
-  clipboardController?: ServerClipboardController
+  clipboardController?: ServerClipboardController,
+  schedulerService?: JasperServerSchedulerService,
+  schedulerTreeProvider?: SchedulerTreeProvider
 ): vscode.Disposable[] {
   const testServerCallback = async (
     payload: WebviewServerPayload
@@ -1131,6 +1144,507 @@ export function registerServerCommands(
     }
   );
 
+  // ===========================================================================
+  // Etapa 15: JasperServer Scheduler Commands (Jobs, Triggers, Executions)
+  // ===========================================================================
+
+  const effectiveSchedulerService =
+    schedulerService ??
+    new JasperServerSchedulerService(serverClient, serverManager, outputChannel);
+  const effectiveSchedulerTreeProvider =
+    schedulerTreeProvider ??
+    new SchedulerTreeProvider(serverManager, effectiveSchedulerService, outputChannel);
+
+  const resolveSchedulerTargetProfile = async (
+    item?: SchedulerTreeItem
+  ): Promise<JasperServerProfile | undefined> => {
+    if (item?.profile) {
+      return item.profile;
+    }
+    const active = await serverManager.getActiveProfile();
+    if (active) {
+      return active;
+    }
+    const picked = await promptForServerProfile(
+      serverManager,
+      'Selecione o servidor JasperServer para gerenciar agendamentos',
+      true
+    );
+    if (!picked) {
+      return undefined;
+    }
+    if (picked === 'add') {
+      await vscode.commands.executeCommand('jasper.addServer');
+      return undefined;
+    }
+    return picked;
+  };
+
+  const resolveTargetScheduleJob = async (
+    item?: SchedulerTreeItem,
+    placeHolder = 'Selecione o agendamento (Report Job)'
+  ): Promise<{ profile: JasperServerProfile; job: ReportJob } | undefined> => {
+    const selectedFromTree =
+      item ?? effectiveSchedulerTreeProvider.getTreeView()?.selection[0];
+    if (selectedFromTree?.job && selectedFromTree.profile) {
+      return { profile: selectedFromTree.profile, job: selectedFromTree.job };
+    }
+
+    const profile = await resolveSchedulerTargetProfile(selectedFromTree);
+    if (!profile) {
+      return undefined;
+    }
+
+    const jobs = await effectiveSchedulerService.listJobs({ limit: 50, offset: 0 }, profile);
+    if (jobs.length === 0) {
+      void vscode.window.showInformationMessage(
+        `Nenhum agendamento encontrado em "${profile.name}".`
+      );
+      return undefined;
+    }
+
+    const picked = await vscode.window.showQuickPick(
+      jobs.map((job) => ({
+        label: `$(tasklist) ${job.name}`,
+        description: `[${job.outputFormat}] ${job.reportUnitUri}`,
+        detail: job.description,
+        job
+      })),
+      { placeHolder, matchOnDescription: true }
+    );
+
+    if (!picked) {
+      return undefined;
+    }
+    return { profile, job: picked.job };
+  };
+
+  const openSchedulerCmd = vscode.commands.registerCommand(
+    'jasper.openScheduler',
+    async () => {
+      await vscode.commands.executeCommand('setContext', 'jasperServerConnected', true);
+      try {
+        await vscode.commands.executeCommand('jasper-schedules.focus');
+      } catch {
+        // Caso o foco na view falhe, abre o Job Editor diretamente
+        await vscode.commands.executeCommand('jasper.createScheduleJob');
+      }
+    }
+  );
+
+  const refreshSchedulesCmd = vscode.commands.registerCommand(
+    'jasper.refreshSchedules',
+    async (item?: SchedulerTreeItem) => {
+      effectiveSchedulerTreeProvider.refresh(item, true);
+      vscode.window.setStatusBarMessage(
+        '$(sync) JasperServer: Lista de agendamentos atualizada.',
+        3000
+      );
+    }
+  );
+
+  const createScheduleJobCmd = vscode.commands.registerCommand(
+    'jasper.createScheduleJob',
+    async (item?: SchedulerTreeItem) => {
+      const profile = await resolveSchedulerTargetProfile(item);
+      if (!profile) {
+        return;
+      }
+
+      SchedulerJobEditorPanel.createOrShow(
+        context,
+        serverManager,
+        serverClient,
+        effectiveSchedulerService,
+        effectiveSchedulerTreeProvider,
+        outputChannel,
+        profile,
+        undefined
+      );
+    }
+  );
+
+  const editScheduleJobCmd = vscode.commands.registerCommand(
+    'jasper.editScheduleJob',
+    async (item?: SchedulerTreeItem) => {
+      const resolved = await resolveTargetScheduleJob(
+        item,
+        'Selecione o agendamento que deseja editar'
+      );
+      if (!resolved) {
+        return;
+      }
+
+      SchedulerJobEditorPanel.createOrShow(
+        context,
+        serverManager,
+        serverClient,
+        effectiveSchedulerService,
+        effectiveSchedulerTreeProvider,
+        outputChannel,
+        resolved.profile,
+        resolved.job
+      );
+    }
+  );
+
+  const editTriggerCmd = vscode.commands.registerCommand(
+    'jasper.editTrigger',
+    async (item?: SchedulerTreeItem) => {
+      const target = item ?? effectiveSchedulerTreeProvider.getTreeView()?.selection[0];
+      if (!target || !target.job || !target.trigger) {
+        await vscode.commands.executeCommand('jasper.editScheduleJob', item);
+        return;
+      }
+
+      SchedulerJobEditorPanel.createOrShow(
+        context,
+        serverManager,
+        serverClient,
+        effectiveSchedulerService,
+        effectiveSchedulerTreeProvider,
+        outputChannel,
+        target.profile,
+        target.job,
+        target.trigger.id
+      );
+    }
+  );
+
+  const runJobNowCmd = vscode.commands.registerCommand(
+    'jasper.runJobNow',
+    async (item?: SchedulerTreeItem) => {
+      const resolved = await resolveTargetScheduleJob(
+        item,
+        'Selecione o agendamento para executar imediatamente'
+      );
+      if (!resolved) {
+        return;
+      }
+
+      const { profile, job } = resolved;
+      try {
+        const execution = await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: `JasperServer: Executando agendamento "${job.name}"...`,
+            cancellable: false
+          },
+          async () => effectiveSchedulerService.runJobNow(job.id, undefined, profile)
+        );
+
+        effectiveSchedulerTreeProvider.refresh();
+        const action = await vscode.window.showInformationMessage(
+          `Execução iniciada para "${job.name}" (ID: ${execution.id}).`,
+          'Ver Execuções'
+        );
+        if (action === 'Ver Execuções') {
+          SchedulerHistoryPanel.createOrShow(
+            context,
+            effectiveSchedulerService,
+            effectiveSchedulerTreeProvider,
+            outputChannel,
+            profile,
+            job,
+            execution.id
+          );
+        }
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        void vscode.window.showErrorMessage(
+          `Falha ao executar "${job.name}": ${errMsg}`
+        );
+      }
+    }
+  );
+
+  const deleteScheduleJobCmd = vscode.commands.registerCommand(
+    'jasper.deleteScheduleJob',
+    async (item?: SchedulerTreeItem) => {
+      const target = item ?? effectiveSchedulerTreeProvider.getTreeView()?.selection[0];
+      if (target && target.kind === 'trigger' && target.trigger) {
+        await vscode.commands.executeCommand('jasper.deleteTrigger', target);
+        return;
+      }
+
+      const resolved = await resolveTargetScheduleJob(
+        target,
+        'Selecione o agendamento que deseja excluir'
+      );
+      if (!resolved) {
+        return;
+      }
+
+      const { profile, job } = resolved;
+      const confirm = await vscode.window.showWarningMessage(
+        `Tem certeza que deseja excluir o agendamento "${job.name}" e todos os seus triggers associados em "${profile.name}"?`,
+        { modal: true },
+        'Deletar Agendamento'
+      );
+
+      if (confirm !== 'Deletar Agendamento') {
+        return;
+      }
+
+      try {
+        await effectiveSchedulerService.deleteJob(job.id, profile);
+        effectiveSchedulerTreeProvider.refresh();
+        void vscode.window.showInformationMessage(
+          `Agendamento "${job.name}" removido de "${profile.name}".`
+        );
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        void vscode.window.showErrorMessage(
+          `Falha ao excluir agendamento "${job.name}": ${errMsg}`
+        );
+      }
+    }
+  );
+
+  const pauseAllJobTriggersCmd = vscode.commands.registerCommand(
+    'jasper.pauseAllJobTriggers',
+    async (item?: SchedulerTreeItem) => {
+      const resolved = await resolveTargetScheduleJob(
+        item,
+        'Selecione o agendamento para pausar seus triggers'
+      );
+      if (!resolved) {
+        return;
+      }
+
+      const { profile, job } = resolved;
+      try {
+        const triggers =
+          job.triggers.length > 0
+            ? job.triggers
+            : await effectiveSchedulerService.listTriggers(job.id, profile);
+
+        for (const trig of triggers) {
+          if (trig.state === 'NORMAL') {
+            await effectiveSchedulerService.pauseTrigger(trig.id, profile);
+          }
+        }
+
+        effectiveSchedulerTreeProvider.refresh();
+        void vscode.window.showInformationMessage(
+          `Todos os triggers de "${job.name}" foram pausados.`
+        );
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        void vscode.window.showErrorMessage(`Erro ao pausar triggers: ${errMsg}`);
+      }
+    }
+  );
+
+  const pauseTriggerCmd = vscode.commands.registerCommand(
+    'jasper.pauseTrigger',
+    async (item?: SchedulerTreeItem) => {
+      const target = item ?? effectiveSchedulerTreeProvider.getTreeView()?.selection[0];
+      if (!target?.trigger) {
+        void vscode.window.showWarningMessage('Selecione um Trigger na árvore para pausar.');
+        return;
+      }
+
+      try {
+        await effectiveSchedulerService.pauseTrigger(target.trigger.id, target.profile);
+        effectiveSchedulerTreeProvider.refresh();
+        void vscode.window.showInformationMessage(
+          `Trigger "${formatTriggerLabel(target.trigger)}" pausado.`
+        );
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        void vscode.window.showErrorMessage(`Falha ao pausar trigger: ${errMsg}`);
+      }
+    }
+  );
+
+  const resumeTriggerCmd = vscode.commands.registerCommand(
+    'jasper.resumeTrigger',
+    async (item?: SchedulerTreeItem) => {
+      const target = item ?? effectiveSchedulerTreeProvider.getTreeView()?.selection[0];
+      if (!target?.trigger) {
+        void vscode.window.showWarningMessage('Selecione um Trigger pausado para retomar.');
+        return;
+      }
+
+      try {
+        await effectiveSchedulerService.resumeTrigger(target.trigger.id, target.profile);
+        effectiveSchedulerTreeProvider.refresh();
+        void vscode.window.showInformationMessage(
+          `Trigger "${formatTriggerLabel(target.trigger)}" retomado.`
+        );
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        void vscode.window.showErrorMessage(`Falha ao retomar trigger: ${errMsg}`);
+      }
+    }
+  );
+
+  const deleteTriggerCmd = vscode.commands.registerCommand(
+    'jasper.deleteTrigger',
+    async (item?: SchedulerTreeItem) => {
+      const target = item ?? effectiveSchedulerTreeProvider.getTreeView()?.selection[0];
+      if (!target?.trigger) {
+        void vscode.window.showWarningMessage('Selecione um Trigger na árvore para excluir.');
+        return;
+      }
+
+      const label = formatTriggerLabel(target.trigger);
+      const confirm = await vscode.window.showWarningMessage(
+        `Deseja remover o trigger "${label}"?`,
+        { modal: true },
+        'Deletar Trigger'
+      );
+
+      if (confirm !== 'Deletar Trigger') {
+        return;
+      }
+
+      try {
+        await effectiveSchedulerService.deleteTrigger(target.trigger.id, target.profile);
+        effectiveSchedulerTreeProvider.refresh();
+        void vscode.window.showInformationMessage(`Trigger "${label}" removido.`);
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        void vscode.window.showErrorMessage(`Falha ao excluir trigger: ${errMsg}`);
+      }
+    }
+  );
+
+  const viewJobExecutionsCmd = vscode.commands.registerCommand(
+    'jasper.viewJobExecutions',
+    async (item?: SchedulerTreeItem) => {
+      const resolved = await resolveTargetScheduleJob(
+        item,
+        'Selecione o agendamento para visualizar o histórico de execuções'
+      );
+      if (!resolved) {
+        return;
+      }
+
+      SchedulerHistoryPanel.createOrShow(
+        context,
+        effectiveSchedulerService,
+        effectiveSchedulerTreeProvider,
+        outputChannel,
+        resolved.profile,
+        resolved.job,
+        item?.execution?.id
+      );
+    }
+  );
+
+  const downloadExecutionOutputCmd = vscode.commands.registerCommand(
+    'jasper.downloadExecutionOutput',
+    async (item?: SchedulerTreeItem) => {
+      const target = item ?? effectiveSchedulerTreeProvider.getTreeView()?.selection[0];
+      const executionId = target?.execution?.id;
+      if (!executionId) {
+        await vscode.commands.executeCommand('jasper.viewJobExecutions', item);
+        return;
+      }
+
+      const profile = await resolveSchedulerTargetProfile(target);
+      if (!profile) {
+        return;
+      }
+
+      const ext = (target?.job?.outputFormat || 'PDF').toLowerCase();
+      const safeName = (target?.job?.name || 'relatorio').replace(
+        /[<>:"/\\|?*\x00-\x1F]/g,
+        '_'
+      );
+      const workspaceDir = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const defaultUri = workspaceDir
+        ? vscode.Uri.file(path.join(workspaceDir, `${safeName}_${executionId}.${ext}`))
+        : undefined;
+
+      const saveUri = await vscode.window.showSaveDialog({
+        title: `Salvar Output da Execução #${executionId}`,
+        defaultUri,
+        filters: {
+          [ext.toUpperCase()]: [ext],
+          'Todos os Arquivos': ['*']
+        }
+      });
+
+      if (!saveUri) {
+        return;
+      }
+
+      try {
+        const bytes = await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Notification,
+            title: `JasperServer: Baixando output da execução #${executionId}...`,
+            cancellable: false
+          },
+          async () =>
+            effectiveSchedulerService.downloadExecutionOutput(executionId, profile)
+        );
+
+        fs.writeFileSync(saveUri.fsPath, Buffer.from(bytes));
+        const action = await vscode.window.showInformationMessage(
+          `Output salvo em "${path.basename(saveUri.fsPath)}".`,
+          'Abrir Arquivo'
+        );
+        if (action === 'Abrir Arquivo') {
+          await vscode.env.openExternal(saveUri);
+        }
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        void vscode.window.showErrorMessage(`Falha ao baixar output: ${errMsg}`);
+      }
+    }
+  );
+
+  const cancelExecutionCmd = vscode.commands.registerCommand(
+    'jasper.cancelExecution',
+    async (item?: SchedulerTreeItem) => {
+      const target = item ?? effectiveSchedulerTreeProvider.getTreeView()?.selection[0];
+      const executionId = target?.execution?.id;
+      if (!executionId) {
+        void vscode.window.showWarningMessage(
+          'Selecione uma execução em andamento para cancelar.'
+        );
+        return;
+      }
+
+      const profile = await resolveSchedulerTargetProfile(target);
+      try {
+        await effectiveSchedulerService.cancelExecution(executionId, profile);
+        effectiveSchedulerTreeProvider.refresh();
+        void vscode.window.showInformationMessage(
+          `Execução #${executionId} cancelada com sucesso.`
+        );
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        void vscode.window.showErrorMessage(`Erro ao cancelar execução: ${errMsg}`);
+      }
+    }
+  );
+
+  const searchSchedulesCmd = vscode.commands.registerCommand(
+    'jasper.searchSchedules',
+    () => {
+      effectiveSchedulerTreeProvider.openClientSideSearch();
+    }
+  );
+
+  const copyScheduleJobCmd = vscode.commands.registerCommand(
+    'jasper.copyScheduleJob',
+    async (item?: SchedulerTreeItem) => {
+      await effectiveSchedulerTreeProvider.copyJobToClipboard(item);
+    }
+  );
+
+  const pasteScheduleJobCmd = vscode.commands.registerCommand(
+    'jasper.pasteScheduleJob',
+    async (item?: SchedulerTreeItem) => {
+      await effectiveSchedulerTreeProvider.pasteJobFromClipboard(item);
+    }
+  );
+
   return [
     addServerCmd,
     editServerCmd,
@@ -1150,6 +1664,23 @@ export function registerServerCommands(
     toggleServerSelectionModeCmd,
     downloadSelectedServerResourcesCmd,
     navigateServerBreadcrumbCmd,
-    navigateServerUpCmd
+    navigateServerUpCmd,
+    openSchedulerCmd,
+    refreshSchedulesCmd,
+    createScheduleJobCmd,
+    editScheduleJobCmd,
+    editTriggerCmd,
+    runJobNowCmd,
+    deleteScheduleJobCmd,
+    pauseAllJobTriggersCmd,
+    pauseTriggerCmd,
+    resumeTriggerCmd,
+    deleteTriggerCmd,
+    viewJobExecutionsCmd,
+    downloadExecutionOutputCmd,
+    cancelExecutionCmd,
+    searchSchedulesCmd,
+    copyScheduleJobCmd,
+    pasteScheduleJobCmd
   ];
 }

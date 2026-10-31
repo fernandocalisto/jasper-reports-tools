@@ -266,9 +266,9 @@ export class JasperServerClient {
 
   /**
    * Executa uma requisição autenticada contra o JasperServer, tratando expiração de sessão (401)
-   * com re-login automático transparente.
+   * com re-login automático transparente e envio de cabeçalhos CSRF.
    */
-  private async requestWithAuth(
+  public async requestWithAuth(
     relativePath: string,
     init: RequestInit = {},
     profile?: JasperServerProfile,
@@ -289,8 +289,24 @@ export class JasperServerClient {
       const timer = setTimeout(() => controller.abort(), DEFAULT_HTTP_TIMEOUT_MS);
 
       const headers = new Headers(init.headers || {});
+      // Proteção CSRF exigida pelo JasperServer REST API v2 em mutações
+      if (!headers.has('X-Remote-Domain')) {
+        headers.set('X-Remote-Domain', '1');
+      }
+
       if (cookieStr) {
         headers.set('Cookie', cookieStr);
+        const csrfMatch = /(?:^|;\s*)(?:OWASP_CSRFTOKEN|CSRF-TOKEN|XSRF-TOKEN)=([^;]+)/i.exec(
+          cookieStr
+        );
+        if (csrfMatch && csrfMatch[1]) {
+          if (!headers.has('OWASP_CSRFTOKEN')) {
+            headers.set('OWASP_CSRFTOKEN', csrfMatch[1].trim());
+          }
+          if (!headers.has('X-CSRF-Token')) {
+            headers.set('X-CSRF-Token', csrfMatch[1].trim());
+          }
+        }
       } else {
         // Fallback para Basic Auth caso o servidor não tenha retornado Set-Cookie no /rest_v2/login
         const loginUser =
@@ -688,7 +704,7 @@ export class JasperServerClient {
     }
   }
 
-  private async extractErrorMessage(response: Response): Promise<string> {
+  public async extractErrorMessage(response: Response): Promise<string> {
     try {
       const text = await response.text();
       if (!text || !text.trim()) {

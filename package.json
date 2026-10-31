@@ -31,6 +31,7 @@
     "onLanguage:xml",
     "onView:jasper-databases",
     "onView:jasper-servers",
+    "onView:jasper-schedules",
     "onCommand:jasper.addConnection",
     "onCommand:jasper.editConnection",
     "onCommand:jasper.deleteConnection",
@@ -63,7 +64,24 @@
     "onCommand:jasper.navigateServerUp",
     "onCommand:jasper.compareReports",
     "onCommand:jasper.compareWithServer",
-    "onCommand:jasper.openDiffViewer"
+    "onCommand:jasper.openDiffViewer",
+    "onCommand:jasper.openScheduler",
+    "onCommand:jasper.refreshSchedules",
+    "onCommand:jasper.createScheduleJob",
+    "onCommand:jasper.editScheduleJob",
+    "onCommand:jasper.editTrigger",
+    "onCommand:jasper.runJobNow",
+    "onCommand:jasper.deleteScheduleJob",
+    "onCommand:jasper.pauseAllJobTriggers",
+    "onCommand:jasper.pauseTrigger",
+    "onCommand:jasper.resumeTrigger",
+    "onCommand:jasper.deleteTrigger",
+    "onCommand:jasper.viewJobExecutions",
+    "onCommand:jasper.downloadExecutionOutput",
+    "onCommand:jasper.cancelExecution",
+    "onCommand:jasper.searchSchedules",
+    "onCommand:jasper.copyScheduleJob",
+    "onCommand:jasper.pasteScheduleJob"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -140,6 +158,11 @@
         {
           "id": "jasper-servers",
           "name": "JasperServer Explorer"
+        },
+        {
+          "id": "jasper-schedules",
+          "name": "Agendamentos",
+          "when": "jasperServerConnected"
         }
       ]
     },
@@ -341,6 +364,108 @@
         "title": "Abrir Visualizador de Diff",
         "category": "Jasper",
         "icon": "$(diff)"
+      },
+      {
+        "command": "jasper.openScheduler",
+        "title": "Abrir Agendamentos",
+        "category": "Jasper",
+        "icon": "$(clock)"
+      },
+      {
+        "command": "jasper.refreshSchedules",
+        "title": "Atualizar Agendamentos",
+        "category": "Jasper",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "jasper.createScheduleJob",
+        "title": "Criar Agendamento",
+        "category": "Jasper",
+        "icon": "$(add)"
+      },
+      {
+        "command": "jasper.editScheduleJob",
+        "title": "Editar Agendamento",
+        "category": "Jasper",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "jasper.editTrigger",
+        "title": "Editar Trigger",
+        "category": "Jasper",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "jasper.runJobNow",
+        "title": "Executar Agora",
+        "category": "Jasper",
+        "icon": "$(play)"
+      },
+      {
+        "command": "jasper.deleteScheduleJob",
+        "title": "Deletar Agendamento",
+        "category": "Jasper",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "jasper.pauseAllJobTriggers",
+        "title": "Pausar Todos Triggers",
+        "category": "Jasper",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "jasper.pauseTrigger",
+        "title": "Pausar Trigger",
+        "category": "Jasper",
+        "icon": "$(debug-pause)"
+      },
+      {
+        "command": "jasper.resumeTrigger",
+        "title": "Retomar Trigger",
+        "category": "Jasper",
+        "icon": "$(debug-continue)"
+      },
+      {
+        "command": "jasper.deleteTrigger",
+        "title": "Deletar Trigger",
+        "category": "Jasper",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "jasper.viewJobExecutions",
+        "title": "Ver Execuções",
+        "category": "Jasper",
+        "icon": "$(history)"
+      },
+      {
+        "command": "jasper.downloadExecutionOutput",
+        "title": "Baixar Output",
+        "category": "Jasper",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "jasper.cancelExecution",
+        "title": "Cancelar Execução",
+        "category": "Jasper",
+        "icon": "$(stop-circle)"
+      },
+      {
+        "command": "jasper.searchSchedules",
+        "title": "Buscar Agendamentos",
+        "category": "Jasper",
+        "icon": "$(search)"
+      },
+      {
+        "command": "jasper.copyScheduleJob",
+        "title": "Copiar Agendamento",
+        "category": "Jasper",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "jasper.pasteScheduleJob",
+        "title": "Colar Agendamento (Duplicar)",
+        "category": "Jasper",
+        "icon": "$(clippy)"
       }
     ],
     "menus": {
@@ -394,6 +519,21 @@
           "command": "jasper.addServer",
           "when": "view == jasper-servers",
           "group": "navigation@7"
+        },
+        {
+          "command": "jasper.createScheduleJob",
+          "when": "view == jasper-schedules",
+          "group": "navigation@1"
+        },
+        {
+          "command": "jasper.searchSchedules",
+          "when": "view == jasper-schedules",
+          "group": "navigation@2"
+        },
+        {
+          "command": "jasper.refreshSchedules",
+          "when": "view == jasper-schedules",
+          "group": "navigation@3"
         }
       ],
       "editor/title": [
@@ -690,6 +830,91 @@
           "command": "jasper.downloadSelectedServerResources",
           "when": "view == jasper-servers && selectionCount > 0",
           "group": "4_multiselect@1"
+        },
+        {
+          "command": "jasper.createScheduleJob",
+          "when": "view == jasper-schedules && viewItem == schedulesRoot",
+          "group": "1_jasper@1"
+        },
+        {
+          "command": "jasper.refreshSchedules",
+          "when": "view == jasper-schedules",
+          "group": "1_jasper@2"
+        },
+        {
+          "command": "jasper.searchSchedules",
+          "when": "view == jasper-schedules && viewItem == schedulesRoot",
+          "group": "1_jasper@3"
+        },
+        {
+          "command": "jasper.editScheduleJob",
+          "when": "view == jasper-schedules && viewItem =~ /^scheduleJob/",
+          "group": "1_jasper@3"
+        },
+        {
+          "command": "jasper.runJobNow",
+          "when": "view == jasper-schedules && viewItem =~ /^scheduleJob/",
+          "group": "1_jasper@4"
+        },
+        {
+          "command": "jasper.viewJobExecutions",
+          "when": "view == jasper-schedules && viewItem =~ /^scheduleJob/",
+          "group": "1_jasper@5"
+        },
+        {
+          "command": "jasper.pauseAllJobTriggers",
+          "when": "view == jasper-schedules && viewItem =~ /^scheduleJob/",
+          "group": "1_jasper@5_pause"
+        },
+        {
+          "command": "jasper.deleteScheduleJob",
+          "when": "view == jasper-schedules && viewItem =~ /^scheduleJob/",
+          "group": "1_jasper@6"
+        },
+        {
+          "command": "jasper.copyScheduleJob",
+          "when": "view == jasper-schedules && viewItem =~ /^scheduleJob/",
+          "group": "2_clipboard@1"
+        },
+        {
+          "command": "jasper.pasteScheduleJob",
+          "when": "view == jasper-schedules && viewItem == schedulesRoot",
+          "group": "2_clipboard@2"
+        },
+        {
+          "command": "jasper.editTrigger",
+          "when": "view == jasper-schedules && viewItem =~ /^scheduleTrigger/",
+          "group": "1_jasper@2"
+        },
+        {
+          "command": "jasper.pauseTrigger",
+          "when": "view == jasper-schedules && viewItem =~ /^scheduleTrigger/ && viewItem =~ /state=NORMAL/",
+          "group": "1_jasper@3"
+        },
+        {
+          "command": "jasper.resumeTrigger",
+          "when": "view == jasper-schedules && viewItem =~ /^scheduleTrigger/ && viewItem =~ /state=PAUSED/",
+          "group": "1_jasper@3"
+        },
+        {
+          "command": "jasper.deleteTrigger",
+          "when": "view == jasper-schedules && viewItem =~ /^scheduleTrigger/",
+          "group": "1_jasper@6"
+        },
+        {
+          "command": "jasper.viewJobExecutions",
+          "when": "view == jasper-schedules && viewItem =~ /^scheduleExecution/",
+          "group": "1_jasper@1"
+        },
+        {
+          "command": "jasper.downloadExecutionOutput",
+          "when": "view == jasper-schedules && viewItem =~ /^scheduleExecution/ && viewItem =~ /status=SUCCESS/",
+          "group": "1_jasper@2"
+        },
+        {
+          "command": "jasper.cancelExecution",
+          "when": "view == jasper-schedules && viewItem =~ /^scheduleExecution/ && viewItem =~ /status=RUNNING/",
+          "group": "1_jasper@3"
         }
       ]
     },
@@ -785,6 +1010,50 @@
         "command": "jasper.downloadServerReport",
         "key": "enter",
         "when": "view == jasper-servers && listFocus && viewItem =~ /^serverReport/"
+      },
+      {
+        "command": "jasper.openScheduler",
+        "key": "ctrl+shift+alt+s",
+        "mac": "cmd+shift+alt+s"
+      },
+      {
+        "command": "jasper.refreshSchedules",
+        "key": "f5",
+        "when": "view == jasper-schedules"
+      },
+      {
+        "command": "jasper.createScheduleJob",
+        "key": "ctrl+n",
+        "mac": "cmd+n",
+        "when": "view == jasper-schedules"
+      },
+      {
+        "command": "jasper.runJobNow",
+        "key": "enter",
+        "when": "view == jasper-schedules && viewItem =~ /^scheduleJob/"
+      },
+      {
+        "command": "jasper.deleteScheduleJob",
+        "key": "delete",
+        "when": "view == jasper-schedules && (viewItem =~ /^scheduleJob/ || viewItem =~ /^scheduleTrigger/)"
+      },
+      {
+        "command": "jasper.searchSchedules",
+        "key": "ctrl+f",
+        "mac": "cmd+f",
+        "when": "view == jasper-schedules"
+      },
+      {
+        "command": "jasper.copyScheduleJob",
+        "key": "ctrl+c",
+        "mac": "cmd+c",
+        "when": "view == jasper-schedules && viewItem =~ /^scheduleJob/"
+      },
+      {
+        "command": "jasper.pasteScheduleJob",
+        "key": "ctrl+v",
+        "mac": "cmd+v",
+        "when": "view == jasper-schedules"
       }
     ],
     "configuration": {

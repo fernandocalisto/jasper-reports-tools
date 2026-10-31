@@ -2,12 +2,14 @@ import * as vscode from 'vscode';
 import { ConnectionManager } from './services/connectionManager';
 import { ServerManager } from './services/serverManager';
 import { JasperServerClient } from './services/jasperServerClient';
+import { JasperServerSchedulerService } from './services/jasperServerScheduler';
 import { RunnerService } from './services/runnerService';
 import { jrxmlParser } from './services/jrxmlParser';
 import { parameterValidator } from './services/parameterValidator';
 import { JasperCompletionProvider, PROVIDER_SELECTOR } from './services/completionProvider';
 import { DatabaseTreeProvider } from './providers/databaseTreeProvider';
 import { ServerTreeProvider } from './providers/serverTreeProvider';
+import { SchedulerTreeProvider } from './providers/schedulerTreeProvider';
 import { ServerSearchController } from './controllers/serverSearchController';
 import { ServerClipboardController } from './controllers/serverClipboardController';
 import { registerConnectionCommands } from './commands/connectionCommands';
@@ -17,6 +19,8 @@ import { PreviewPanel } from './webviewPanels/previewPanel';
 import { FieldViewerPanel } from './webviewPanels/fieldViewerPanel';
 import { ServerFormPanel } from './webviewPanels/serverFormPanel';
 import { DiffViewerPanel } from './webviewPanels/diffViewerPanel';
+import { SchedulerJobEditorPanel } from './webviewPanels/schedulerJobEditorPanel';
+import { SchedulerHistoryPanel } from './webviewPanels/schedulerHistoryPanel';
 
 let statusBarItem: vscode.StatusBarItem | undefined;
 let outputChannel: vscode.OutputChannel | undefined;
@@ -40,11 +44,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const connectionManager = new ConnectionManager(context);
   const serverManager = new ServerManager(context);
   const serverClient = new JasperServerClient(serverManager);
+  const schedulerService = new JasperServerSchedulerService(
+    serverClient,
+    serverManager,
+    outputChannel
+  );
   const runnerService = new RunnerService(context);
   const databaseTreeProvider = new DatabaseTreeProvider(connectionManager);
   const serverTreeProvider = new ServerTreeProvider(
     serverManager,
     serverClient,
+    outputChannel
+  );
+  const schedulerTreeProvider = new SchedulerTreeProvider(
+    serverManager,
+    schedulerService,
     outputChannel
   );
 
@@ -60,7 +74,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     manageCheckboxStateManually: true
   });
 
+  const schedulesTreeView = vscode.window.createTreeView('jasper-schedules', {
+    treeDataProvider: schedulerTreeProvider,
+    showCollapseAll: true
+  });
+
   const treeBindingDisposable = serverTreeProvider.bindTreeView(serverTreeView);
+  const schedulesBindingDisposable = schedulerTreeProvider.bindTreeView(schedulesTreeView);
   const searchController = new ServerSearchController(
     serverTreeProvider,
     serverTreeView,
@@ -110,7 +130,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     outputChannel,
     serverTreeView,
     searchController,
-    clipboardController
+    clipboardController,
+    schedulerService,
+    schedulerTreeProvider
   );
 
   const completionDisposable = vscode.languages.registerCompletionItemProvider(
@@ -144,9 +166,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     serverManager,
     databaseTreeProvider,
     serverTreeProvider,
+    schedulerTreeProvider,
     treeView,
     serverTreeView,
+    schedulesTreeView,
     treeBindingDisposable,
+    schedulesBindingDisposable,
     searchController,
     clipboardController,
     statusBarItem,
@@ -172,6 +197,12 @@ export function deactivate(): void {
   }
   if (DiffViewerPanel.currentPanel) {
     DiffViewerPanel.currentPanel.dispose();
+  }
+  if (SchedulerJobEditorPanel.currentPanel) {
+    SchedulerJobEditorPanel.currentPanel.dispose();
+  }
+  if (SchedulerHistoryPanel.currentPanel) {
+    SchedulerHistoryPanel.currentPanel.dispose();
   }
   if (statusBarItem) {
     statusBarItem.dispose();

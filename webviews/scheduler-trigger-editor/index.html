@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'none'; style-src {{cspSource}} 'unsafe-inline'; script-src 'nonce-{{nonce}}';"
+  />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Editor de Trigger (JasperServer Scheduler)</title>
+  <link rel="stylesheet" href="{{styleUri}}" />
+</head>
+<body>
+  <div id="triggerModalBackdrop" class="trigger-modal-backdrop">
+    <div class="trigger-modal-dialog" role="dialog" aria-labelledby="triggerModalTitle">
+      <header class="trigger-modal-header">
+        <h2 id="triggerModalTitle">Adicionar Trigger de Agendamento</h2>
+        <button type="button" id="closeTriggerModalBtn" class="icon-btn" title="Fechar (Esc)">✕</button>
+      </header>
+
+      <div class="trigger-modal-body">
+        <div class="form-group">
+          <label>Tipo de Trigger <span class="required">*</span></label>
+          <div class="trigger-type-tabs" role="radiogroup">
+            <button type="button" class="trigger-type-card active" data-type="CRON">
+              <strong>⏰ CronTrigger</strong>
+              <span>Expressão Quartz Cron (ex: dias úteis às 06:00)</span>
+            </button>
+            <button type="button" class="trigger-type-card" data-type="SIMPLE">
+              <strong>🔁 SimpleTrigger</strong>
+              <span>Repetição a cada X minutos/horas</span>
+            </button>
+            <button type="button" class="trigger-type-card" data-type="CALENDAR">
+              <strong>📅 CalendarTrigger</strong>
+              <span>Cron + Calendário de feriados do servidor</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="calendarSection" class="form-group hidden">
+          <label for="triggerCalendarName">Nome do Calendário (JasperServer) <span class="required">*</span></label>
+          <input
+            type="text"
+            id="triggerCalendarName"
+            placeholder="Ex: FeriadosNacionais, BusinessDaysCalendar"
+            autocomplete="off"
+          />
+          <span class="field-hint">Nome do calendário cadastrado no JasperServer para exclusão de feriados.</span>
+        </div>
+
+        <div id="cronSection" class="form-group">
+          <div class="label-row">
+            <label for="triggerCronExpr">Expressão Quartz Cron <span class="required">*</span></label>
+            <select id="cronPresetSelect" class="preset-select">
+              <option value="">Presets rápidos...</option>
+              <option value="0 0 6 ? * MON-FRI *">Todo dia útil às 06:00</option>
+              <option value="0 0 0 * * ? *">Diariamente à meia-noite (00:00)</option>
+              <option value="0 0 * * * ? *">A cada hora cheia</option>
+              <option value="0 */15 * * * ? *">A cada 15 minutos</option>
+              <option value="0 0 8 1 * ? *">Todo dia 1º do mês às 08:00</option>
+              <option value="0 30 18 ? * FRI *">Toda sexta-feira às 18:30</option>
+            </select>
+          </div>
+          <input
+            type="text"
+            id="triggerCronExpr"
+            value="0 0 6 ? * MON-FRI *"
+            placeholder="Seg Min Hora DiaMês Mês DiaSemana [Ano]"
+            autocomplete="off"
+          />
+          <span class="field-hint">Formato Quartz (6 ou 7 campos): <code>Seg Min Hora DiaMês Mês DiaSemana [Ano]</code></span>
+
+          <div id="cronValidationBox" class="cron-validation-box"></div>
+        </div>
+
+        <div id="simpleSection" class="form-row hidden">
+          <div class="form-group form-col-half">
+            <label for="simpleIntervalValue">Repetir a cada <span class="required">*</span></label>
+            <div class="inline-input-group">
+              <input type="number" id="simpleIntervalValue" min="1" value="1" />
+              <select id="simpleIntervalUnit">
+                <option value="3600000" selected>Horas</option>
+                <option value="60000">Minutos</option>
+                <option value="1000">Segundos</option>
+                <option value="1">Milissegundos (ms)</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group form-col-half">
+            <label for="simpleRepeatCount">Quantidade de Execuções (`repeatCount`)</label>
+            <input type="number" id="simpleRepeatCount" min="-1" value="24" />
+            <span class="field-hint">Use <code>-1</code> para repetição infinita.</span>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group form-col-half">
+            <label for="triggerTimezone">Timezone (IANA) <span class="required">*</span></label>
+            <select id="triggerTimezone">
+              <option value="America/Sao_Paulo" selected>America/Sao_Paulo (BRT/ Horário de Brasília)</option>
+              <option value="America/Manaus">America/Manaus (AMT)</option>
+              <option value="America/Fortaleza">America/Fortaleza</option>
+              <option value="America/Cuiaba">America/Cuiaba</option>
+              <option value="UTC">UTC</option>
+              <option value="America/New_York">America/New_York</option>
+              <option value="Europe/Lisbon">Europe/Lisbon</option>
+            </select>
+          </div>
+          <div class="form-group form-col-half">
+            <label for="triggerStateSelect">Estado Inicial</label>
+            <select id="triggerStateSelect">
+              <option value="NORMAL" selected>Ativo (NORMAL)</option>
+              <option value="PAUSED">Pausado (PAUSED)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group form-col-half">
+            <label for="triggerStartTime">Início (`startTime`) <span class="required">*</span></label>
+            <input type="datetime-local" id="triggerStartTime" />
+          </div>
+          <div class="form-group form-col-half">
+            <label for="triggerEndTime">Fim (`endTime` - Opcional)</label>
+            <input type="datetime-local" id="triggerEndTime" />
+          </div>
+        </div>
+      </div>
+
+      <footer class="trigger-modal-footer">
+        <button type="button" id="cancelTriggerModalBtn" class="btn btn-secondary">Cancelar</button>
+        <button type="button" id="confirmTriggerModalBtn" class="btn btn-primary">Salvar Trigger</button>
+      </footer>
+    </div>
+  </div>
+  <script nonce="{{nonce}}" src="{{scriptUri}}"></script>
+</body>
+</html>

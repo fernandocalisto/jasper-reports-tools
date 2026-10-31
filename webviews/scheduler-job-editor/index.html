@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'none'; style-src {{cspSource}} 'unsafe-inline'; script-src 'nonce-{{nonce}}';"
+  />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agendamento JasperServer</title>
+  <link rel="stylesheet" href="{{styleUri}}" />
+  <link rel="stylesheet" href="{{triggerStyleUri}}" />
+</head>
+<body>
+  <main class="editor-container">
+    <header class="editor-header">
+      <div>
+        <h1 id="editorTitle">Criar Novo Agendamento</h1>
+        <p id="serverSubtitle" class="editor-subtitle">JasperServer Scheduler — REST API v2</p>
+      </div>
+      <div class="header-actions">
+        <button type="button" id="runNowHeaderBtn" class="btn btn-secondary hidden">
+          ▶ Executar Agora
+        </button>
+      </div>
+    </header>
+
+    <div id="statusBanner" class="status-banner hidden" role="alert"></div>
+
+    <!-- Navegação de Abas -->
+    <nav class="tabs-bar" role="tablist">
+      <button type="button" class="tab-btn active" data-tab="tab-general" role="tab">
+        1. Geral
+      </button>
+      <button type="button" class="tab-btn" data-tab="tab-parameters" role="tab">
+        2. Parâmetros <span id="paramCountBadge" class="badge">0</span>
+      </button>
+      <button type="button" class="tab-btn" data-tab="tab-triggers" role="tab">
+        3. Triggers <span id="triggerCountBadge" class="badge">0</span>
+      </button>
+    </nav>
+
+    <form id="jobEditorForm" novalidate>
+      <input type="hidden" id="jobIdInput" />
+
+      <!-- ABA 1: GERAL -->
+      <section id="tab-general" class="tab-panel active">
+        <div class="form-group">
+          <label for="jobNameInput">Nome do Agendamento <span class="required">*</span></label>
+          <input
+            type="text"
+            id="jobNameInput"
+            placeholder="Ex: Ficha Atendimento Diária"
+            required
+            autocomplete="off"
+          />
+          <span class="field-hint">Nome identificador do Job no JasperServer Scheduler.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="jobDescInput">Descrição</label>
+          <textarea
+            id="jobDescInput"
+            rows="2"
+            placeholder="Descrição opcional sobre a finalidade e destinatários deste agendamento"
+          ></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="reportUnitInput">Report Unit (URI no Repositório) <span class="required">*</span></label>
+          <div class="input-with-actions">
+            <input
+              type="text"
+              id="reportUnitInput"
+              placeholder="Ex: /public/reports/FichaAtendimento"
+              required
+              autocomplete="off"
+            />
+            <button type="button" id="openTreePickerBtn" class="btn btn-secondary">
+              📂 Selecionar Report Unit...
+            </button>
+            <button type="button" id="inspectParamsBtn" class="btn btn-secondary" title="Extrair parâmetros do Report Unit">
+              🔍 Carregar Parâmetros
+            </button>
+          </div>
+          <span class="field-hint">Selecione um relatório (.jrxml / reportUnit) do repositório para pré-preencher a aba Parâmetros.</span>
+        </div>
+
+        <div class="form-group">
+          <label for="outputFormatSelect">Formato de Saída (Output Format) <span class="required">*</span></label>
+          <select id="outputFormatSelect">
+            <option value="PDF" selected>PDF — Documento Portátil (.pdf)</option>
+            <option value="XLS">XLS — Planilha Excel (.xls)</option>
+            <option value="CSV">CSV — Valores Separados por Vírgula (.csv)</option>
+            <option value="RTF">RTF — Rich Text Format (.rtf)</option>
+            <option value="HTML">HTML — Página Web (.html)</option>
+            <option value="JRP">JRP — JasperReports Print (.jrprint)</option>
+          </select>
+        </div>
+      </section>
+
+      <!-- ABA 2: PARÂMETROS -->
+      <section id="tab-parameters" class="tab-panel hidden">
+        <div class="panel-toolbar">
+          <span class="toolbar-info">Parâmetros enviados ao Report Unit durante cada execução agendada:</span>
+          <div class="toolbar-buttons">
+            <button type="button" id="reloadParamsFromReportBtn" class="btn btn-secondary btn-sm">
+              ↻ Recarregar do Report Unit
+            </button>
+            <button type="button" id="addParamRowBtn" class="btn btn-primary btn-sm">
+              + Adicionar Parâmetro
+            </button>
+          </div>
+        </div>
+
+        <div class="table-wrapper">
+          <table class="data-grid" id="parametersGrid">
+            <thead>
+              <tr>
+                <th>Nome *</th>
+                <th>Tipo Java</th>
+                <th>Valor Padrão</th>
+                <th class="center-col">Obrigatório</th>
+                <th class="center-col">Prompt</th>
+                <th class="center-col">Ações</th>
+              </tr>
+            </thead>
+            <tbody id="parametersTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ABA 3: TRIGGERS -->
+      <section id="tab-triggers" class="tab-panel hidden">
+        <div class="panel-toolbar">
+          <span class="toolbar-info">Gatilhos de recorrência (Simple, Quartz Cron ou Calendar):</span>
+          <div class="toolbar-buttons">
+            <button type="button" id="addTriggerBtn" class="btn btn-primary btn-sm">
+              + Adicionar Trigger
+            </button>
+          </div>
+        </div>
+
+        <div id="triggersListContainer" class="triggers-list"></div>
+      </section>
+
+      <footer class="editor-footer">
+        <button type="button" id="cancelJobBtn" class="btn btn-secondary">Cancelar</button>
+        <button type="submit" id="saveJobBtn" class="btn btn-primary">Criar Agendamento</button>
+      </footer>
+    </form>
+  </main>
+
+  <!-- MODAL TREE PICKER DE REPORT UNIT -->
+  <div id="treePickerBackdrop" class="trigger-modal-backdrop hidden">
+    <div class="trigger-modal-dialog" role="dialog" aria-labelledby="treePickerTitle">
+      <header class="trigger-modal-header">
+        <h2 id="treePickerTitle">Selecionar Report Unit no JasperServer</h2>
+        <button type="button" id="closeTreePickerBtn" class="icon-btn">✕</button>
+      </header>
+      <div class="trigger-modal-body">
+        <div class="picker-breadcrumb-bar">
+          <span>Pasta atual: <code id="pickerCurrentFolder">/</code></span>
+          <button type="button" id="pickerUpFolderBtn" class="btn btn-secondary btn-sm">↑ Subir Nível</button>
+        </div>
+        <div id="pickerResourceList" class="picker-resource-list"></div>
+      </div>
+      <footer class="trigger-modal-footer">
+        <button type="button" id="cancelTreePickerBtn" class="btn btn-secondary">Fechar</button>
+      </footer>
+    </div>
+  </div>
+
+  <!-- MODAL DE ADIÇÃO/EDIÇÃO DE TRIGGER -->
+  <div id="triggerModalBackdrop" class="trigger-modal-backdrop hidden">
+    <div class="trigger-modal-dialog" role="dialog" aria-labelledby="triggerModalTitle">
+      <header class="trigger-modal-header">
+        <h2 id="triggerModalTitle">Adicionar Trigger de Agendamento</h2>
+        <button type="button" id="closeTriggerModalBtn" class="icon-btn" title="Fechar (Esc)">✕</button>
+      </header>
+
+      <div class="trigger-modal-body">
+        <div class="form-group">
+          <label>Tipo de Trigger <span class="required">*</span></label>
+          <div class="trigger-type-tabs" role="radiogroup">
+            <button type="button" class="trigger-type-card active" data-type="CRON">
+              <strong>⏰ CronTrigger</strong>
+              <span>Expressão Quartz Cron (ex: dias úteis às 06:00)</span>
+            </button>
+            <button type="button" class="trigger-type-card" data-type="SIMPLE">
+              <strong>🔁 SimpleTrigger</strong>
+              <span>Repetição a cada X minutos/horas</span>
+            </button>
+            <button type="button" class="trigger-type-card" data-type="CALENDAR">
+              <strong>📅 CalendarTrigger</strong>
+              <span>Cron + Calendário de feriados do servidor</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="calendarSection" class="form-group hidden">
+          <label for="triggerCalendarName">Nome do Calendário (JasperServer) <span class="required">*</span></label>
+          <input
+            type="text"
+            id="triggerCalendarName"
+            placeholder="Ex: FeriadosNacionais, BusinessDaysCalendar"
+            autocomplete="off"
+          />
+          <span class="field-hint">Nome do calendário cadastrado no JasperServer para exclusão de feriados.</span>
+        </div>
+
+        <div id="cronSection" class="form-group">
+          <div class="label-row">
+            <label for="triggerCronExpr">Expressão Quartz Cron <span class="required">*</span></label>
+            <select id="cronPresetSelect" class="preset-select">
+              <option value="">Presets rápidos...</option>
+              <option value="0 0 6 ? * MON-FRI *">Todo dia útil às 06:00</option>
+              <option value="0 0 0 * * ? *">Diariamente à meia-noite (00:00)</option>
+              <option value="0 0 * * * ? *">A cada hora cheia</option>
+              <option value="0 */15 * * * ? *">A cada 15 minutos</option>
+              <option value="0 0 8 1 * ? *">Todo dia 1º do mês às 08:00</option>
+              <option value="0 30 18 ? * FRI *">Toda sexta-feira às 18:30</option>
+            </select>
+          </div>
+          <input
+            type="text"
+            id="triggerCronExpr"
+            value="0 0 6 ? * MON-FRI *"
+            placeholder="Seg Min Hora DiaMês Mês DiaSemana [Ano]"
+            autocomplete="off"
+          />
+          <span class="field-hint">Formato Quartz (6 ou 7 campos): <code>Seg Min Hora DiaMês Mês DiaSemana [Ano]</code></span>
+
+          <div id="cronValidationBox" class="cron-validation-box"></div>
+        </div>
+
+        <div id="simpleSection" class="form-row hidden">
+          <div class="form-group form-col-half">
+            <label for="simpleIntervalValue">Repetir a cada <span class="required">*</span></label>
+            <div class="inline-input-group">
+              <input type="number" id="simpleIntervalValue" min="1" value="1" />
+              <select id="simpleIntervalUnit">
+                <option value="3600000" selected>Horas</option>
+                <option value="60000">Minutos</option>
+                <option value="1000">Segundos</option>
+                <option value="1">Milissegundos (ms)</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-group form-col-half">
+            <label for="simpleRepeatCount">Quantidade de Execuções (`repeatCount`)</label>
+            <input type="number" id="simpleRepeatCount" min="-1" value="24" />
+            <span class="field-hint">Use <code>-1</code> para repetição infinita.</span>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group form-col-half">
+            <label for="triggerTimezone">Timezone (IANA) <span class="required">*</span></label>
+            <select id="triggerTimezone">
+              <option value="America/Sao_Paulo" selected>America/Sao_Paulo (Horário de Brasília)</option>
+              <option value="America/Manaus">America/Manaus (AMT)</option>
+              <option value="America/Fortaleza">America/Fortaleza</option>
+              <option value="America/Cuiaba">America/Cuiaba</option>
+              <option value="UTC">UTC</option>
+              <option value="America/New_York">America/New_York</option>
+              <option value="Europe/Lisbon">Europe/Lisbon</option>
+            </select>
+          </div>
+          <div class="form-group form-col-half">
+            <label for="triggerStateSelect">Estado Inicial</label>
+            <select id="triggerStateSelect">
+              <option value="NORMAL" selected>Ativo (NORMAL)</option>
+              <option value="PAUSED">Pausado (PAUSED)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group form-col-half">
+            <label for="triggerStartTime">Início (`startTime`) <span class="required">*</span></label>
+            <input type="datetime-local" id="triggerStartTime" />
+          </div>
+          <div class="form-group form-col-half">
+            <label for="triggerEndTime">Fim (`endTime` - Opcional)</label>
+            <input type="datetime-local" id="triggerEndTime" />
+          </div>
+        </div>
+      </div>
+
+      <footer class="trigger-modal-footer">
+        <button type="button" id="cancelTriggerModalBtn" class="btn btn-secondary">Cancelar</button>
+        <button type="button" id="confirmTriggerModalBtn" class="btn btn-primary">Salvar Trigger</button>
+      </footer>
+    </div>
+  </div>
+
+  <script nonce="{{nonce}}" src="{{triggerScriptUri}}"></script>
+  <script nonce="{{nonce}}" src="{{scriptUri}}"></script>
+</body>
+</html>

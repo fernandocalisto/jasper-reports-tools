@@ -14,8 +14,13 @@ import {
   ParameterValidator,
   parameterValidator as defaultParameterValidator
 } from '../services/parameterValidator';
+import { ServerManager } from '../services/serverManager';
+import { JasperServerClient } from '../services/jasperServerClient';
+import { ServerTreeItem, ServerTreeProvider } from '../providers/serverTreeProvider';
+import { DiffOptions } from '../services/reportDiffEngine';
 import { PreviewPanel } from '../webviewPanels/previewPanel';
 import { FieldViewerPanel } from '../webviewPanels/fieldViewerPanel';
+import { DiffSessionInput, DiffViewerPanel } from '../webviewPanels/diffViewerPanel';
 
 export interface BatchCommandInvocationOptions {
   inputPaths?: string[];
@@ -85,7 +90,10 @@ export function registerReportCommands(
   connectionManager: ConnectionManager,
   runnerService: RunnerService,
   outputChannel: vscode.OutputChannel,
-  parameterValidator: ParameterValidator = defaultParameterValidator
+  parameterValidator: ParameterValidator = defaultParameterValidator,
+  serverManager?: ServerManager,
+  serverClient?: JasperServerClient,
+  serverTreeProvider?: ServerTreeProvider
 ): vscode.Disposable[] {
   const compileCurrentReportCmd = vscode.commands.registerCommand(
     'jasper.compileCurrentReport',
@@ -350,13 +358,88 @@ export function registerReportCommands(
     }
   );
 
+  const compareReportsCmd = vscode.commands.registerCommand(
+    'jasper.compareReports',
+    async (
+      firstArg?: vscode.Uri | string,
+      secondArg?: vscode.Uri[] | vscode.Uri | string,
+      options?: DiffOptions
+    ) => {
+      await executeCompareReportsCommand(
+        context,
+        runnerService,
+        outputChannel,
+        firstArg,
+        secondArg,
+        options
+      );
+    }
+  );
+
+  const compareWithServerCmd = vscode.commands.registerCommand(
+    'jasper.compareWithServer',
+    async (
+      arg?: ServerTreeItem | vscode.Uri | string,
+      secondArg?: ServerTreeItem | vscode.Uri | string,
+      options?: DiffOptions
+    ) => {
+      await executeCompareWithServerCommand(
+        context,
+        runnerService,
+        outputChannel,
+        serverManager,
+        serverClient,
+        serverTreeProvider,
+        arg,
+        secondArg,
+        options
+      );
+    }
+  );
+
+  const openDiffViewerCmd = vscode.commands.registerCommand(
+    'jasper.openDiffViewer',
+    async (
+      sessionOrLeft?: DiffSessionInput | vscode.Uri | string,
+      rightArg?: vscode.Uri | string,
+      options?: DiffOptions
+    ) => {
+      if (
+        sessionOrLeft &&
+        typeof sessionOrLeft === 'object' &&
+        'left' in sessionOrLeft &&
+        'right' in sessionOrLeft
+      ) {
+        return DiffViewerPanel.createOrShow(
+          context,
+          runnerService,
+          outputChannel,
+          sessionOrLeft as DiffSessionInput
+        );
+      }
+
+      await executeCompareReportsCommand(
+        context,
+        runnerService,
+        outputChannel,
+        sessionOrLeft as vscode.Uri | string | undefined,
+        rightArg,
+        options
+      );
+      return DiffViewerPanel.currentPanel;
+    }
+  );
+
   return [
     compileCurrentReportCmd,
     decompileJasperCmd,
     openPreviewCmd,
     openFieldViewerCmd,
     batchCompileCmd,
-    batchExportCmd
+    batchExportCmd,
+    compareReportsCmd,
+    compareWithServerCmd,
+    openDiffViewerCmd
   ];
 }
 
@@ -850,4 +933,416 @@ async function executeBatchCommand(params: {
   }
 
   return result;
+}
+
+function isReportFileExtension(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase();
+  return ext === '.jrxml' || ext === '.jasper';
+}
+
+function getActiveReportFilePath(): string | undefined {
+  const activeEditor = vscode.window.activeTextEditor;
+  if (
+    activeEditor &&
+    activeEditor.document &&
+    isReportFileExtension(activeEditor.document.uri.fsPath)
+  ) {
+    return activeEditor.document.uri.fsPath;
+  }
+
+  const activeTab = vscode.window.tabGroups?.activeTabGroup?.activeTab;
+  const tabInput = activeTab?.input as { uri?: vscode.Uri } | undefined;
+  if (tabInput?.uri?.fsPath && isReportFileExtension(tabInput.uri.fsPath)) {
+    return tabInput.uri.fsPath;
+  }
+
+  return undefined;
+}
+
+async function promptForLocalReportFile(
+  title: string,
+  excludePath?: string
+): Promise<string | undefined> {
+  const foundFiles = await vscode.workspace.findFiles('**/*.{jrxml,jasper}');
+  const excludeLower = excludePath ? path.resolve(excludePath).toLowerCase() : undefined;
+
+  interface ReportQuickPickItem extends vscode.QuickPickItem {
+    filePath?: string;
+    browseDisk?: boolean;
+  }
+
+  const items: ReportQuickPickItem[] = foundFiles
+    .map((uri) => uri.fsPath)
+    .filter((fsPath) => !excludeLower || path.resolve(fsPath).toLowerCase() !== excludeLower)
+    .sort((a, b) => path.basename(a).localeCompare(path.basename(b), 'pt-BR'))
+    .map((fsPath) => ({
+      label: `$(file-code) ${path.basename(fsPath)}`,
+      description: vscode.workspace.asRelativePath(fsPath),
+      filePath: fsPath
+    }));
+
+  items.push({
+    label: '$(folder-opened) Selecionar outro arquivo (.jrxml / .jasper) no computador...',
+    description: 'Abrir seletor de arquivos do sistema',
+    alwaysShow: true,
+    browseDisk: true
+  });
+
+  const picked = await vscode.window.showQuickPick(items, {
+    title,
+    placeHolder: 'Selecione um relatório .jrxml ou .jasper',
+    matchOnDescription: true
+  });
+
+  if (!picked) {
+    return undefined;
+  }
+
+  if (picked.browseDisk) {
+    const dialogUris = await vscode.window.showOpenDialog({
+      canSelectFiles: true,
+      canSelectFolders: false,
+      canSelectMany: false,
+      openLabel: 'Selecionar Relatório',
+      filters: {
+        'Relatórios JasperReports (.jrxml, .jasper)': ['jrxml', 'jasper']
+      }
+    });
+    return dialogUris?.[0]?.fsPath;
+  }
+
+  return picked.filePath;
+}
+
+async function executeCompareReportsCommand(
+  context: vscode.ExtensionContext,
+  runnerService: RunnerService,
+  outputChannel: vscode.OutputChannel,
+  firstArg?: vscode.Uri | string,
+  secondArg?: vscode.Uri[] | vscode.Uri | string,
+  options?: DiffOptions
+): Promise<void> {
+  let fileA: string | undefined;
+  let fileB: string | undefined;
+
+  // Caso 1: Multi-select no Explorer (secondArg é vscode.Uri[] com >= 2 itens)
+  if (Array.isArray(secondArg) && secondArg.length >= 2) {
+    const validUris = secondArg.filter(
+      (u) => isVscodeUri(u) && isReportFileExtension(u.fsPath)
+    );
+    if (validUris.length >= 2) {
+      fileA = validUris[0].fsPath;
+      fileB = validUris[1].fsPath;
+    }
+  }
+
+  // Caso 2: Chamada programática com dois caminhos/URIs explícitos
+  if (!fileA || !fileB) {
+    if (typeof firstArg === 'string' && typeof secondArg === 'string') {
+      fileA = firstArg;
+      fileB = secondArg;
+    } else if (isVscodeUri(firstArg) && isVscodeUri(secondArg)) {
+      fileA = firstArg.fsPath;
+      fileB = secondArg.fsPath;
+    }
+  }
+
+  // Caso 3: Um arquivo passado no Explorer + Arquivo ativo diferente no Editor
+  if (!fileA || !fileB) {
+    const clickedPath =
+      typeof firstArg === 'string'
+        ? firstArg
+        : isVscodeUri(firstArg)
+        ? firstArg.fsPath
+        : undefined;
+    const activePath = getActiveReportFilePath();
+
+    if (
+      clickedPath &&
+      activePath &&
+      path.resolve(clickedPath).toLowerCase() !== path.resolve(activePath).toLowerCase()
+    ) {
+      fileA = activePath;
+      fileB = clickedPath;
+    } else {
+      fileA = clickedPath || activePath;
+    }
+  }
+
+  if (!fileA) {
+    fileA = await promptForLocalReportFile('Jasper Diff: Selecione o Relatório A (Origem)');
+    if (!fileA) {
+      return;
+    }
+  }
+
+  if (!fileB) {
+    fileB = await promptForLocalReportFile(
+      `Jasper Diff: Comparar "${path.basename(fileA)}" com...`,
+      fileA
+    );
+    if (!fileB) {
+      return;
+    }
+  }
+
+  // Salva documentos caso estejam abertos e modificados
+  for (const openDoc of vscode.workspace.textDocuments) {
+    const docPath = path.resolve(openDoc.uri.fsPath).toLowerCase();
+    if (
+      openDoc.isDirty &&
+      (docPath === path.resolve(fileA).toLowerCase() ||
+        docPath === path.resolve(fileB).toLowerCase())
+    ) {
+      await openDoc.save();
+    }
+  }
+
+  DiffViewerPanel.createOrShow(context, runnerService, outputChannel, {
+    left: {
+      filePath: fileA,
+      label: path.basename(fileA),
+      subtitle: fileA,
+      origin: 'local'
+    },
+    right: {
+      filePath: fileB,
+      label: path.basename(fileB),
+      subtitle: fileB,
+      origin: 'local'
+    },
+    options
+  });
+}
+
+async function executeCompareWithServerCommand(
+  context: vscode.ExtensionContext,
+  runnerService: RunnerService,
+  outputChannel: vscode.OutputChannel,
+  serverManager?: ServerManager,
+  serverClient?: JasperServerClient,
+  serverTreeProvider?: ServerTreeProvider,
+  arg?: ServerTreeItem | vscode.Uri | string,
+  secondArg?: ServerTreeItem | vscode.Uri | string,
+  options?: DiffOptions
+): Promise<void> {
+  if (!serverManager || !serverClient) {
+    void vscode.window.showErrorMessage(
+      'Serviço JasperServer não está disponível para comparação.'
+    );
+    return;
+  }
+
+  let serverItem: ServerTreeItem | undefined;
+  let localFilePath: string | undefined;
+
+  if (arg instanceof ServerTreeItem) {
+    serverItem = arg;
+  } else if (secondArg instanceof ServerTreeItem) {
+    serverItem = secondArg;
+  }
+
+  if (typeof arg === 'string') {
+    localFilePath = arg;
+  } else if (isVscodeUri(arg)) {
+    localFilePath = arg.fsPath;
+  } else if (typeof secondArg === 'string') {
+    localFilePath = secondArg;
+  } else if (isVscodeUri(secondArg)) {
+    localFilePath = secondArg.fsPath;
+  }
+
+  if (!localFilePath) {
+    localFilePath = getActiveReportFilePath();
+  }
+
+  if (!localFilePath) {
+    localFilePath = await promptForLocalReportFile(
+      'Jasper Diff: Selecione o Relatório Local para comparar com o JasperServer'
+    );
+    if (!localFilePath) {
+      return;
+    }
+  }
+
+  let profile = serverItem?.profile;
+  let resourceUri = serverItem?.resource?.uri;
+  let resourceName = serverItem?.resource?.name;
+
+  // Verifica se o arquivo local já possui origem mapeada no JasperServer
+  if (!resourceUri) {
+    const mappedOrigin = serverManager.getDownloadedOrigin(localFilePath);
+    if (mappedOrigin) {
+      const originProfile = serverManager.getProfileById(mappedOrigin.serverId);
+      if (originProfile) {
+        const useOriginPick = await vscode.window.showQuickPick(
+          [
+            {
+              id: 'mapped' as const,
+              label: `$(cloud) ${mappedOrigin.resourceName} (${originProfile.name})`,
+              description: mappedOrigin.resourceUri,
+              detail: 'Recurso original vinculado a este arquivo local'
+            },
+            {
+              id: 'choose' as const,
+              label: '$(search) Escolher outro recurso no JasperServer...',
+              description: 'Selecionar manualmente outro relatório no repositório'
+            }
+          ],
+          {
+            title: 'Comparar com JasperServer',
+            placeHolder: 'Selecione o recurso do servidor para comparar'
+          }
+        );
+
+        if (!useOriginPick) {
+          return;
+        }
+
+        if (useOriginPick.id === 'mapped') {
+          profile = originProfile;
+          resourceUri = mappedOrigin.resourceUri;
+          resourceName = mappedOrigin.resourceName;
+        }
+      }
+    }
+  }
+
+  if (!profile) {
+    profile = await serverManager.getActiveProfile();
+    if (!profile) {
+      const profiles = serverManager.getProfiles();
+      if (profiles.length === 0) {
+        void vscode.window.showWarningMessage(
+          'Nenhum servidor JasperServer configurado. Adicione um servidor primeiro.'
+        );
+        return;
+      }
+      const pickedProfile = await vscode.window.showQuickPick(
+        profiles.map((p) => ({
+          label: `$(server) ${p.name}`,
+          description: p.baseUrl,
+          profile: p
+        })),
+        {
+          title: 'Selecione o Servidor JasperServer',
+          placeHolder: 'Escolha o servidor para buscar o relatório'
+        }
+      );
+      if (!pickedProfile) {
+        return;
+      }
+      profile = pickedProfile.profile;
+    }
+  }
+
+  if (!resourceUri) {
+    const cachedResources =
+      serverTreeProvider
+        ?.getAllResourcesFlat(profile.id)
+        .filter(
+          (r) =>
+            r.resourceType === 'reportUnit' ||
+            r.resourceType === 'jrxml' ||
+            r.resourceType === 'jasper'
+        ) ?? [];
+
+    interface ServerResourcePickItem extends vscode.QuickPickItem {
+      uri?: string;
+      name?: string;
+      manualInput?: boolean;
+    }
+
+    const pickItems: ServerResourcePickItem[] = cachedResources.map((res) => ({
+      label: `$(file-code) ${res.name}`,
+      description: res.uri,
+      uri: res.uri,
+      name: res.name
+    }));
+
+    pickItems.push({
+      label: '$(edit) Informar URI do relatório manualmente...',
+      description: `Ex: /reports/${path.basename(localFilePath)}`,
+      alwaysShow: true,
+      manualInput: true
+    });
+
+    const chosenResource = await vscode.window.showQuickPick(pickItems, {
+      title: `Comparar com JasperServer (${profile.name})`,
+      placeHolder: 'Selecione o relatório do servidor ou informe o URI',
+      matchOnDescription: true
+    });
+
+    if (!chosenResource) {
+      return;
+    }
+
+    if (chosenResource.manualInput) {
+      const manualUri = await vscode.window.showInputBox({
+        title: `URI do Relatório no JasperServer (${profile.name})`,
+        prompt: 'Informe o URI completo do relatório no JasperServer',
+        value: `/reports/${path.basename(localFilePath)}`,
+        placeHolder: 'Ex: /reports/hospitalar/Atendimento.jrxml'
+      });
+      if (!manualUri || !manualUri.trim()) {
+        return;
+      }
+      resourceUri = manualUri.trim().startsWith('/')
+        ? manualUri.trim()
+        : `/${manualUri.trim()}`;
+      resourceName = path.posix.basename(resourceUri);
+    } else {
+      resourceUri = chosenResource.uri;
+      resourceName = chosenResource.name;
+    }
+  }
+
+  if (!resourceUri || !profile) {
+    return;
+  }
+
+  const targetProfile = profile;
+  const targetUri = resourceUri;
+  const targetName = resourceName || path.posix.basename(targetUri);
+
+  try {
+    const serverXmlContent = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: `JasperServer: Baixando "${targetName}" de ${targetProfile.name} para comparação...`,
+        cancellable: false
+      },
+      async () => {
+        const password = await serverManager.getPassword(targetProfile.id);
+        return serverClient.downloadResource(targetUri, targetProfile, password);
+      }
+    );
+
+    DiffViewerPanel.createOrShow(context, runnerService, outputChannel, {
+      left: {
+        filePath: localFilePath,
+        label: `${path.basename(localFilePath)} (Local)`,
+        subtitle: localFilePath,
+        origin: 'local'
+      },
+      right: {
+        content: serverXmlContent,
+        label: `${targetName} (${targetProfile.name})`,
+        subtitle: `${targetProfile.name}:${targetUri}`,
+        origin: 'server'
+      },
+      options
+    });
+  } catch (error) {
+    const errMessage =
+      error instanceof Error
+        ? error.message
+        : 'Falha ao obter relatório do JasperServer para comparação.';
+    outputChannel.appendLine(
+      `[${new Date().toLocaleTimeString('pt-BR')}] [ReportDiff] ERRO ao baixar "${targetUri}": ${errMessage}`
+    );
+    void vscode.window.showErrorMessage(
+      `Falha ao comparar com servidor "${targetProfile.name}": ${errMessage}`
+    );
+  }
 }

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'none'; style-src {{cspSource}} 'unsafe-inline'; script-src 'nonce-{{nonce}}';"
+  >
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Comparar Relatórios — JasperReports</title>
+  <link rel="stylesheet" href="{{styleUri}}">
+</head>
+<body>
+  <div class="diff-app">
+    <!-- Top Header & Main Toolbar -->
+    <header class="diff-header">
+      <div class="header-top-row">
+        <div class="title-group">
+          <h1 id="diffTitle">Comparação de Relatórios</h1>
+          <div class="file-meta-row" id="fileMetaRow">
+            <span id="metaFileA">Relatório A</span>
+            <span class="meta-arrow">↔</span>
+            <span id="metaFileB">Relatório B</span>
+            <span class="meta-time" id="metaDiffTime"></span>
+          </div>
+        </div>
+
+        <div class="stats-group" id="statsBadgeGroup" title="Estatísticas de linhas (+adicionadas -removidas ~modificadas)">
+          <span class="stat-pill stat-added" id="statAdded">+0</span>
+          <span class="stat-pill stat-removed" id="statRemoved">-0</span>
+          <span class="stat-pill stat-modified" id="statModified">~0</span>
+          <span class="stat-pill stat-semantic" id="statSemanticCount">0 mudanças</span>
+        </div>
+      </div>
+
+      <!-- Primary Toolbar -->
+      <div class="toolbar-row">
+        <div class="nav-controls">
+          <button type="button" id="btnPrevChange" class="btn btn-secondary" title="Mudança Anterior (Shift+F7)">
+            &#9650; Anterior <kbd>Shift+F7</kbd>
+          </button>
+          <span class="change-counter" id="changeCounter">0 / 0</span>
+          <button type="button" id="btnNextChange" class="btn btn-secondary" title="Próxima Mudança (F7)">
+            Próxima &#9660; <kbd>F7</kbd>
+          </button>
+        </div>
+
+        <div class="option-toggles">
+          <label class="toggle-label" title="Mostrar apenas blocos com diferenças">
+            <input type="checkbox" id="chkOnlyChanges">
+            <span>Apenas Mudanças</span>
+          </label>
+          <label class="toggle-label" title="Ignorar espaços em branco e indentação">
+            <input type="checkbox" id="chkIgnoreWhitespace">
+            <span>Ignorar Whitespace</span>
+          </label>
+          <label class="toggle-label" title="Ignorar atributo uuid gerado automaticamente pelo Jaspersoft Studio">
+            <input type="checkbox" id="chkIgnoreUUID">
+            <span>Ignorar UUID</span>
+          </label>
+          <label class="toggle-label" title="Diff semântico de Query SQL e Expressões Groovy/Java">
+            <input type="checkbox" id="chkSemanticDiff" checked>
+            <span>Diff Semântico</span>
+          </label>
+          <label class="toggle-label" title="Sincronizar rolagem entre os painéis Esquerdo e Direito">
+            <input type="checkbox" id="chkSyncScroll" checked>
+            <span>Scroll Sincronizado</span>
+          </label>
+        </div>
+
+        <div class="action-buttons">
+          <button type="button" id="btnToggleSummary" class="btn btn-secondary" title="Mostrar/Ocultar Resumo Semântico Consolidado">
+            Resumo Semântico
+          </button>
+          <button type="button" id="btnExpandCollapseAll" class="btn btn-secondary" title="Expandir ou recolher todos os blocos inalterados">
+            Recolher Inalterados
+          </button>
+          <button type="button" id="btnSwapSides" class="btn btn-secondary" title="Inverter Relatório A e Relatório B">
+            &#8646; Inverter
+          </button>
+          <button type="button" id="btnExportHtml" class="btn btn-primary" title="Exportar comparação como arquivo HTML standalone">
+            Exportar HTML
+          </button>
+          <button type="button" id="btnCancelDiff" class="btn btn-danger hidden" title="Cancelar processamento do diff">
+            Cancelar
+          </button>
+        </div>
+      </div>
+
+      <!-- Category Filters Bar -->
+      <div class="filters-bar" id="filtersBar">
+        <span class="filters-label">Categorias:</span>
+        <label class="cat-checkbox" data-category="structure">
+          <input type="checkbox" value="structure" checked>
+          <span class="cat-dot cat-structure"></span>
+          <span>Estrutura</span>
+          <span class="cat-count" id="count-structure">0</span>
+        </label>
+        <label class="cat-checkbox" data-category="attributes">
+          <input type="checkbox" value="attributes" checked>
+          <span class="cat-dot cat-attributes"></span>
+          <span>Atributos</span>
+          <span class="cat-count" id="count-attributes">0</span>
+        </label>
+        <label class="cat-checkbox" data-category="query">
+          <input type="checkbox" value="query" checked>
+          <span class="cat-dot cat-query"></span>
+          <span>Query</span>
+          <span class="cat-count" id="count-query">0</span>
+        </label>
+        <label class="cat-checkbox" data-category="parameters">
+          <input type="checkbox" value="parameters" checked>
+          <span class="cat-dot cat-parameters"></span>
+          <span>Parâmetros</span>
+          <span class="cat-count" id="count-parameters">0</span>
+        </label>
+        <label class="cat-checkbox" data-category="fields">
+          <input type="checkbox" value="fields" checked>
+          <span class="cat-dot cat-fields"></span>
+          <span>Campos</span>
+          <span class="cat-count" id="count-fields">0</span>
+        </label>
+        <label class="cat-checkbox" data-category="variables">
+          <input type="checkbox" value="variables" checked>
+          <span class="cat-dot cat-variables"></span>
+          <span>Variáveis</span>
+          <span class="cat-count" id="count-variables">0</span>
+        </label>
+        <label class="cat-checkbox" data-category="styles">
+          <input type="checkbox" value="styles" checked>
+          <span class="cat-dot cat-styles"></span>
+          <span>Estilos</span>
+          <span class="cat-count" id="count-styles">0</span>
+        </label>
+        <label class="cat-checkbox" data-category="expressions">
+          <input type="checkbox" value="expressions" checked>
+          <span class="cat-dot cat-expressions"></span>
+          <span>Expressões</span>
+          <span class="cat-count" id="count-expressions">0</span>
+        </label>
+        <label class="cat-checkbox" data-category="subreports">
+          <input type="checkbox" value="subreports" checked>
+          <span class="cat-dot cat-subreports"></span>
+          <span>Subrelatórios</span>
+          <span class="cat-count" id="count-subreports">0</span>
+        </label>
+        <div class="filter-quick-actions">
+          <button type="button" id="btnSelectAllCats" class="btn-link">Todas</button>
+          <span>|</span>
+          <button type="button" id="btnClearAllCats" class="btn-link">Nenhuma</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Status / Error / Loading Banner -->
+    <div id="statusBanner" class="status-banner hidden" role="status">
+      <span id="statusBannerText"></span>
+      <div class="status-banner-actions">
+        <button type="button" id="btnBannerCancel" class="btn btn-danger btn-small hidden">Cancelar</button>
+        <button type="button" id="btnOpenLog" class="btn-link hidden">Ver Log</button>
+      </div>
+    </div>
+
+    <!-- Main Workspace: Semantic Summary Drawer + Side-by-Side Diff Panels -->
+    <main class="diff-workspace">
+      <!-- Collapsible Consolidated Semantic Summary -->
+      <aside id="semanticDrawer" class="semantic-drawer">
+        <div class="drawer-header">
+          <h2>Resumo Consolidado de Mudanças</h2>
+          <input
+            type="text"
+            id="semanticSearchInput"
+            placeholder="Filtrar mudanças por XPath, tag ou valor..."
+            autocomplete="off"
+          >
+        </div>
+        <div id="semanticList" class="semantic-list">
+          <div class="empty-state">Analisando estrutura XML...</div>
+        </div>
+      </aside>
+
+      <!-- Side-by-Side Monaco-style Diff View -->
+      <section class="side-by-side-container">
+        <div class="pane-headers">
+          <div class="pane-header pane-header-left">
+            <span class="pane-badge" id="badgeOriginA">ORIGEM (A)</span>
+            <strong id="headerNameA">Relatório A</strong>
+            <span class="pane-sub" id="headerInfoA"></span>
+          </div>
+          <div class="pane-header pane-header-right">
+            <span class="pane-badge" id="badgeOriginB">DESTINO (B)</span>
+            <strong id="headerNameB">Relatório B</strong>
+            <span class="pane-sub" id="headerInfoB"></span>
+          </div>
+        </div>
+
+        <div class="panes-viewport">
+          <div id="paneLeft" class="diff-pane diff-pane-left" tabindex="0">
+            <div id="linesLeft" class="code-lines"></div>
+          </div>
+          <div id="paneRight" class="diff-pane diff-pane-right" tabindex="0">
+            <div id="linesRight" class="code-lines"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script nonce="{{nonce}}" src="{{scriptUri}}"></script>
+</body>
+</html>

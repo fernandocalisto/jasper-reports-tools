@@ -60,7 +60,10 @@
     "onCommand:jasper.toggleServerSelectionMode",
     "onCommand:jasper.downloadSelectedServerResources",
     "onCommand:jasper.navigateServerBreadcrumb",
-    "onCommand:jasper.navigateServerUp"
+    "onCommand:jasper.navigateServerUp",
+    "onCommand:jasper.compareReports",
+    "onCommand:jasper.compareWithServer",
+    "onCommand:jasper.openDiffViewer"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -320,6 +323,24 @@
         "title": "Subir um Nível no Repositório",
         "category": "Jasper",
         "icon": "$(arrow-up)"
+      },
+      {
+        "command": "jasper.compareReports",
+        "title": "Comparar Relatórios",
+        "category": "Jasper",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "jasper.compareWithServer",
+        "title": "Comparar com Servidor",
+        "category": "Jasper",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "jasper.openDiffViewer",
+        "title": "Abrir Visualizador de Diff",
+        "category": "Jasper",
+        "icon": "$(diff)"
       }
     ],
     "menus": {
@@ -395,6 +416,11 @@
           "command": "jasper.openFieldViewer",
           "when": "resourceExtname == .jrxml",
           "group": "navigation@3"
+        },
+        {
+          "command": "jasper.compareReports",
+          "when": "resourceExtname == .jrxml || resourceExtname == .jasper",
+          "group": "1_jasper@8"
         }
       ],
       "editor/context": [
@@ -431,6 +457,16 @@
         {
           "command": "jasper.pasteServerResource",
           "group": "1_jasper@6"
+        },
+        {
+          "command": "jasper.compareReports",
+          "when": "resourceExtname == .jrxml || resourceExtname == .jasper",
+          "group": "1_jasper@7"
+        },
+        {
+          "command": "jasper.compareWithServer",
+          "when": "resourceExtname == .jrxml || resourceExtname == .jasper",
+          "group": "1_jasper@7"
         }
       ],
       "explorer/context": [
@@ -485,8 +521,18 @@
           "group": "1_jasper@6"
         },
         {
-          "command": "jasper.pasteServerResource",
+          "command": "jasper.compareReports",
+          "when": "resourceExtname == .jrxml || resourceExtname == .jasper",
           "group": "1_jasper@7"
+        },
+        {
+          "command": "jasper.compareWithServer",
+          "when": "resourceExtname == .jrxml || resourceExtname == .jasper",
+          "group": "1_jasper@7"
+        },
+        {
+          "command": "jasper.pasteServerResource",
+          "group": "1_jasper@8"
         }
       ],
       "view/item/context": [
@@ -611,6 +657,11 @@
           "group": "1_jasper@3"
         },
         {
+          "command": "jasper.compareWithServer",
+          "when": "view == jasper-servers && viewItem =~ /^serverReport/",
+          "group": "1_jasper@6"
+        },
+        {
           "command": "jasper.deleteServerResource",
           "when": "view == jasper-servers && viewItem =~ /^serverReport/",
           "group": "2_modification@1"
@@ -677,6 +728,12 @@
         "command": "jasper.batchExport",
         "key": "ctrl+shift+alt+e",
         "mac": "cmd+shift+alt+e",
+        "when": "explorerViewletFocus"
+      },
+      {
+        "command": "jasper.compareReports",
+        "key": "ctrl+shift+alt+c",
+        "mac": "cmd+shift+alt+c",
         "when": "explorerViewletFocus"
       },
       {

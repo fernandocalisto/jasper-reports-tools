@@ -16,6 +16,7 @@ import { registerServerCommands } from './commands/serverCommands';
 import { PreviewPanel } from './webviewPanels/previewPanel';
 import { FieldViewerPanel } from './webviewPanels/fieldViewerPanel';
 import { ServerFormPanel } from './webviewPanels/serverFormPanel';
+import { DiffViewerPanel } from './webviewPanels/diffViewerPanel';
 
 let statusBarItem: vscode.StatusBarItem | undefined;
 let outputChannel: vscode.OutputChannel | undefined;
@@ -89,13 +90,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     runnerService,
     outputChannel
   );
-  // Registra comandos de relatório (compileCurrentReport, decompileJasper, openPreview, openFieldViewer, batchCompile, batchExport)
+  // Registra comandos de relatório (compileCurrentReport, decompileJasper, openPreview, openFieldViewer, batchCompile, batchExport, compareReports, compareWithServer, openDiffViewer)
   const reportDisposables = registerReportCommands(
     context,
     connectionManager,
     runnerService,
     outputChannel,
-    parameterValidator
+    parameterValidator,
+    serverManager,
+    serverClient,
+    serverTreeProvider
   );
   const serverDisposables = registerServerCommands(
     context,
@@ -123,6 +127,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       parameterValidator.invalidateCache(document.uri.fsPath);
       PreviewPanel.handleDidSaveTextDocument(document);
       FieldViewerPanel.handleDidSaveTextDocument(document);
+      DiffViewerPanel.handleDidSaveTextDocument(document);
     }
   });
 
@@ -164,6 +169,9 @@ export function deactivate(): void {
   }
   if (ServerFormPanel.currentPanel) {
     ServerFormPanel.currentPanel.dispose();
+  }
+  if (DiffViewerPanel.currentPanel) {
+    DiffViewerPanel.currentPanel.dispose();
   }
   if (statusBarItem) {
     statusBarItem.dispose();

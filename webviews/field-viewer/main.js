@@ -13,11 +13,13 @@
   const btnOpenLogEl = document.getElementById('btnOpenLog');
   const toastBannerEl = document.getElementById('toastBanner');
   const fieldCountLabelEl = document.getElementById('fieldCountLabel');
+  const validationSummaryBadgeEl = document.getElementById('validationSummaryBadge');
   const inspectionBadgeEl = document.getElementById('inspectionBadge');
   const fieldsTableBodyEl = document.getElementById('fieldsTableBody');
   const queryCodeEl = document.getElementById('queryCode');
 
   let allFields = [];
+  let validationEnabled = true;
   let toastTimeout = null;
 
   function updateConnectionUi(connectionName) {
@@ -64,6 +66,70 @@
       .replace(/'/g, '&#39;');
   }
 
+  function renderValidationBadge(field) {
+    if (!validationEnabled) {
+      return '<span class="validation-badge validation-disabled" title="Validação desativada nas configurações">—</span>';
+    }
+    const status = field.validationStatus || 'OK';
+    const severity = field.validationSeverity || (status === 'OK' ? 'ok' : status === 'Obrigatório' ? 'warning' : 'error');
+    const message = field.validationMessage || status;
+
+    let cssClass = 'validation-ok';
+    if (severity === 'error' || status === 'Tipo incompatível') {
+      cssClass = 'validation-error';
+    } else if (severity === 'warning' || status === 'Obrigatório') {
+      cssClass = 'validation-warning';
+    }
+
+    return (
+      '<span class="validation-badge ' +
+      cssClass +
+      '" title="' +
+      escapeHtml(message) +
+      '">' +
+      escapeHtml(status) +
+      '</span>'
+    );
+  }
+
+  function updateValidationSummary() {
+    if (!validationSummaryBadgeEl) {
+      return;
+    }
+    if (!validationEnabled || allFields.length === 0) {
+      validationSummaryBadgeEl.classList.add('hidden');
+      return;
+    }
+
+    let errors = 0;
+    let warnings = 0;
+    allFields.forEach(function (f) {
+      const status = f.validationStatus || 'OK';
+      const severity = f.validationSeverity || (status === 'OK' ? 'ok' : status === 'Obrigatório' ? 'warning' : 'error');
+      if (severity === 'error' || status === 'Tipo incompatível') {
+        errors += 1;
+      } else if (severity === 'warning' || status === 'Obrigatório') {
+        warnings += 1;
+      }
+    });
+
+    validationSummaryBadgeEl.classList.remove('hidden', 'tag-error', 'tag-warning', 'tag-ok');
+    if (errors > 0 || warnings > 0) {
+      const parts = [];
+      if (errors > 0) {
+        parts.push(errors + (errors === 1 ? ' incompatível' : ' incompatíveis'));
+      }
+      if (warnings > 0) {
+        parts.push(warnings + (warnings === 1 ? ' obrigatório' : ' obrigatórios'));
+      }
+      validationSummaryBadgeEl.textContent = '⚠ ' + parts.join(', ');
+      validationSummaryBadgeEl.classList.add(errors > 0 ? 'tag-error' : 'tag-warning');
+    } else {
+      validationSummaryBadgeEl.textContent = '✓ Validação: OK';
+      validationSummaryBadgeEl.classList.add('tag-ok');
+    }
+  }
+
   function renderTable() {
     const query = (searchInputEl.value || '').trim().toLowerCase();
     const filtered = allFields.filter(function (f) {
@@ -74,7 +140,8 @@
         f.name.toLowerCase().includes(query) ||
         (f.javaClass && f.javaClass.toLowerCase().includes(query)) ||
         (f.jdbcType && f.jdbcType.toLowerCase().includes(query)) ||
-        (f.description && f.description.toLowerCase().includes(query))
+        (f.description && f.description.toLowerCase().includes(query)) ||
+        (f.validationStatus && f.validationStatus.toLowerCase().includes(query))
       );
     });
 
@@ -83,9 +150,11 @@
         ? allFields.length + ' campo(s)'
         : filtered.length + ' de ' + allFields.length + ' campo(s)';
 
+    updateValidationSummary();
+
     if (filtered.length === 0) {
       fieldsTableBodyEl.innerHTML =
-        '<tr><td colspan="5" class="empty-state">Nenhum campo encontrado.</td></tr>';
+        '<tr><td colspan="6" class="empty-state">Nenhum campo encontrado.</td></tr>';
       return;
     }
 
@@ -118,6 +187,9 @@
           '</td>' +
           '<td class="mono-cell">' +
           escapeHtml(f.nullable || '-') +
+          '</td>' +
+          '<td class="validation-cell">' +
+          renderValidationBadge(f) +
           '</td>' +
           '<td class="col-actions">' +
           '<button type="button" class="btn-small btn-copy-expr" data-field="' +
@@ -202,6 +274,7 @@
         reportTitleEl.textContent = 'Fields: ' + (data.reportName || '');
         updateConnectionUi(data.connectionName);
         allFields = Array.isArray(data.fields) ? data.fields : [];
+        validationEnabled = data.validationEnabled !== false;
 
         if (data.inspectedWithDb) {
           inspectionBadgeEl.textContent =

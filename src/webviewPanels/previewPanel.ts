@@ -5,9 +5,21 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { ConnectionManager } from '../services/connectionManager';
 import { RunnerCliError, RunnerService } from '../services/runnerService';
-import { jrxmlParser, JrxmlParameter } from '../services/jrxmlParser';
+import { JrxmlMetadata, jrxmlParser, JrxmlParameter } from '../services/jrxmlParser';
+import {
+  ParameterValidator,
+  parameterValidator as defaultParameterValidator,
+  ValidationResult
+} from '../services/parameterValidator';
 
 const AUTO_RELOAD_STATE_KEY = 'jasper_preview_auto_reload';
+
+export interface ValidationSettings {
+  enabled: boolean;
+  autoValidateOnPreviewOpen: boolean;
+  debounceMs: number;
+  showWarningsAsErrors: boolean;
+}
 
 export class PreviewPanel implements vscode.Disposable {
   public static currentPanel: PreviewPanel | undefined;
@@ -15,6 +27,7 @@ export class PreviewPanel implements vscode.Disposable {
 
   private readonly panel: vscode.WebviewPanel;
   private readonly disposables: vscode.Disposable[] = [];
+  private readonly parameterValidator: ParameterValidator;
   private jrxmlPath: string;
   private lastParams: Record<string, any> = {};
   private lastGeneratedPdfPath: string | undefined;
@@ -27,10 +40,12 @@ export class PreviewPanel implements vscode.Disposable {
     private readonly connectionManager: ConnectionManager,
     private readonly runnerService: RunnerService,
     private readonly outputChannel: vscode.OutputChannel,
-    jrxmlPath: string
+    jrxmlPath: string,
+    parameterValidator: ParameterValidator = defaultParameterValidator
   ) {
     this.panel = panel;
     this.jrxmlPath = jrxmlPath;
+    this.parameterValidator = parameterValidator;
 
     this.panel.webview.html = this.getHtmlForWebview(this.panel.webview);
 
@@ -63,7 +78,8 @@ export class PreviewPanel implements vscode.Disposable {
     connectionManager: ConnectionManager,
     runnerService: RunnerService,
     outputChannel: vscode.OutputChannel,
-    jrxmlPath: string
+    jrxmlPath: string,
+    parameterValidator: ParameterValidator = defaultParameterValidator
   ): PreviewPanel {
     const normalizedPath = path.resolve(jrxmlPath);
     const title = `Preview: ${path.basename(normalizedPath)}`;
@@ -112,7 +128,8 @@ export class PreviewPanel implements vscode.Disposable {
       connectionManager,
       runnerService,
       outputChannel,
-      normalizedPath
+      normalizedPath,
+      parameterValidator
     );
 
     return PreviewPanel.currentPanel;
@@ -128,8 +145,36 @@ export class PreviewPanel implements vscode.Disposable {
     void PreviewPanel.currentPanel.onDocumentSaved(document);
   }
 
+  public static handleConfigurationChanged(): void {
+    if (!PreviewPanel.currentPanel) {
+      return;
+    }
+    void PreviewPanel.currentPanel.onConfigurationChanged();
+  }
+
   public getJrxmlPath(): string {
     return this.jrxmlPath;
+  }
+
+  public getValidationSettings(): ValidationSettings {
+    const config = vscode.workspace.getConfiguration('jasper.validation');
+    return {
+      enabled: config.get<boolean>('enabled', true),
+      autoValidateOnPreviewOpen: config.get<boolean>('autoValidateOnPreviewOpen', true),
+      debounceMs: config.get<number>('debounceMs', 300),
+      showWarningsAsErrors: config.get<boolean>('showWarningsAsErrors', false)
+    };
+  }
+
+  public async onConfigurationChanged(): Promise<void> {
+    const validationSettings = this.getValidationSettings();
+    await this.panel.webview.postMessage({
+      command: 'updateValidationSettings',
+      validationSettings
+    });
+    if (validationSettings.enabled) {
+      await this.validateParameters(this.lastParams);
+    }
   }
 
   public isAutoReloadEnabled(): boolean {
@@ -153,6 +198,9 @@ export class PreviewPanel implements vscode.Disposable {
     if (savedPath.toLowerCase() !== this.jrxmlPath.toLowerCase()) {
       return;
     }
+
+    this.parameterValidator.invalidateCache(this.jrxmlPath);
+
     if (!this.isAutoReloadEnabled()) {
       return;
     }
@@ -177,24 +225,131 @@ export class PreviewPanel implements vscode.Disposable {
     );
   }
 
-  private extractParameters(document?: vscode.TextDocument): JrxmlParameter[] {
+  private extractMetadata(document?: vscode.TextDocument): JrxmlMetadata {
     try {
       const targetDoc = document ?? this.findOpenDocument();
-      const metadata = targetDoc
-        ? jrxmlParser.getMetadata(targetDoc)
-        : jrxmlParser.getMetadata(this.jrxmlPath);
-      return metadata.parameters;
+      return this.parameterValidator.getCachedMetadata(this.jrxmlPath, targetDoc);
     } catch (error) {
       const errMsg = error instanceof Error ? error.message : String(error);
-      this.log(`Aviso ao inspecionar parâmetros XML de "${path.basename(this.jrxmlPath)}": ${errMsg}`);
-      return [];
+      this.log(`Aviso ao inspecionar metadados XML de "${path.basename(this.jrxmlPath)}": ${errMsg}`);
+      return { parameters: [], fields: [], variables: [] };
     }
+  }
+
+  private extractParameters(document?: vscode.TextDocument): JrxmlParameter[] {
+    return this.extractMetadata(document).parameters;
+  }
+
+  private buildInitialParams(parameters: JrxmlParameter[]): Record<string, any> {
+    const initial: Record<string, any> = {};
+    for (const p of parameters) {
+      if (this.lastParams[p.name] !== undefined) {
+        initial[p.name] = this.lastParams[p.name];
+      } else if (p.defaultValue !== undefined && p.defaultValue !== null) {
+        const trimmed = String(p.defaultValue).trim();
+        if (
+          trimmed &&
+          trimmed !== 'null' &&
+          !trimmed.startsWith('new ') &&
+          !trimmed.includes('$P{') &&
+          !trimmed.includes('$F{') &&
+          !trimmed.includes('$V{')
+        ) {
+          initial[p.name] = trimmed;
+        } else {
+          initial[p.name] = '';
+        }
+      } else if (
+        p.className === 'java.lang.Boolean' ||
+        p.className === 'boolean'
+      ) {
+        initial[p.name] = false;
+      } else {
+        initial[p.name] = '';
+      }
+    }
+    return initial;
+  }
+
+  private async validateParameters(
+    params: Record<string, any>
+  ): Promise<ValidationResult[]> {
+    const validationSettings = this.getValidationSettings();
+    const metadata = this.extractMetadata();
+    const context = {
+      parameter: metadata.parameters[0],
+      parameters: metadata.parameters,
+      allParameters: params,
+      fields: metadata.fields,
+      jrxmlPath: this.jrxmlPath,
+      showWarningsAsErrors: validationSettings.showWarningsAsErrors
+    };
+
+    const results = this.parameterValidator.validateAll(params, context);
+
+    // Atualiza UI de validação (inline + painel lateral + badge no header)
+    await this.updateValidationUI(results);
+
+    // Se houver erros, desabilita botão "Atualizar" ou mostra warning
+    await this.updateActionButtons(results);
+
+    return results;
+  }
+
+  private async updateValidationUI(results: ValidationResult[]): Promise<void> {
+    const serialized = results.map((r) => ({
+      parameterName: r.parameterName,
+      ruleType: r.rule.type,
+      passed: r.passed,
+      message: r.message,
+      severity: r.severity
+    }));
+
+    await this.panel.webview.postMessage({
+      command: 'validationResults',
+      results: serialized
+    });
+  }
+
+  private async updateActionButtons(results: ValidationResult[]): Promise<void> {
+    const errorCount = results.filter((r) => !r.passed && r.severity === 'error').length;
+    const warningCount = results.filter(
+      (r) => !r.passed && r.severity === 'warning'
+    ).length;
+
+    await this.panel.webview.postMessage({
+      command: 'updateActionButtons',
+      hasErrors: errorCount > 0,
+      errorCount,
+      warningCount
+    });
   }
 
   private async initializePreview(autoRun: boolean): Promise<void> {
     const openDoc = this.findOpenDocument();
     const parameters = this.extractParameters(openDoc);
     const activeProfile = await this.connectionManager.getActiveProfile();
+    const validationSettings = this.getValidationSettings();
+    const initialParams = this.buildInitialParams(parameters);
+    this.lastParams = { ...initialParams };
+
+    let hasBlockingErrors = false;
+    let initialValidationResults: ValidationResult[] = [];
+
+    if (validationSettings.enabled && validationSettings.autoValidateOnPreviewOpen) {
+      const metadata = this.extractMetadata(openDoc);
+      initialValidationResults = this.parameterValidator.validateAll(initialParams, {
+        parameter: metadata.parameters[0],
+        parameters: metadata.parameters,
+        allParameters: initialParams,
+        fields: metadata.fields,
+        jrxmlPath: this.jrxmlPath,
+        showWarningsAsErrors: validationSettings.showWarningsAsErrors
+      });
+      hasBlockingErrors = initialValidationResults.some(
+        (r) => !r.passed && r.severity === 'error'
+      );
+    }
 
     await this.panel.webview.postMessage({
       command: 'initMetadata',
@@ -202,8 +357,21 @@ export class PreviewPanel implements vscode.Disposable {
       parameters,
       connectionName: activeProfile?.name ?? null,
       autoReload: this.isAutoReloadEnabled(),
-      autoRun
+      validationSettings,
+      initialValidationResults: initialValidationResults.map((r) => ({
+        parameterName: r.parameterName,
+        ruleType: r.rule.type,
+        passed: r.passed,
+        message: r.message,
+        severity: r.severity
+      })),
+      autoRun: autoRun && !hasBlockingErrors
     });
+
+    if (validationSettings.enabled && validationSettings.autoValidateOnPreviewOpen) {
+      await this.updateValidationUI(initialValidationResults);
+      await this.updateActionButtons(initialValidationResults);
+    }
   }
 
   private getTempPdfPath(): string {
@@ -226,9 +394,26 @@ export class PreviewPanel implements vscode.Disposable {
         break;
       }
 
+      case 'validateParameters': {
+        const params =
+          message.params && typeof message.params === 'object' ? message.params : {};
+        this.lastParams = { ...params };
+        await this.validateParameters(params);
+        break;
+      }
+
       case 'runReport': {
         const params =
           message.params && typeof message.params === 'object' ? message.params : {};
+        this.lastParams = { ...params };
+        const validationSettings = this.getValidationSettings();
+        if (validationSettings.enabled) {
+          const results = await this.validateParameters(params);
+          const hasErrors = results.some((r) => !r.passed && r.severity === 'error');
+          if (hasErrors) {
+            return;
+          }
+        }
         await this.generatePreviewPdf(params, Boolean(message.isAutoReload));
         break;
       }

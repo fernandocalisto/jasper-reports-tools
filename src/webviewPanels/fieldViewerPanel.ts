@@ -3,7 +3,12 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { ConnectionManager } from '../services/connectionManager';
-import { FieldAnalyzer } from '../services/fieldAnalyzer';
+import { AnalyzedField, FieldAnalysisResult, FieldAnalyzer } from '../services/fieldAnalyzer';
+import { JrxmlField, jrxmlParser } from '../services/jrxmlParser';
+import {
+  ParameterValidator,
+  parameterValidator as defaultParameterValidator
+} from '../services/parameterValidator';
 import { RunnerCliError, RunnerService } from '../services/runnerService';
 
 export class FieldViewerPanel implements vscode.Disposable {
@@ -13,6 +18,7 @@ export class FieldViewerPanel implements vscode.Disposable {
   private readonly panel: vscode.WebviewPanel;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly fieldAnalyzer: FieldAnalyzer;
+  private readonly parameterValidator: ParameterValidator;
   private jrxmlPath: string;
   private isInspecting = false;
 
@@ -22,11 +28,18 @@ export class FieldViewerPanel implements vscode.Disposable {
     private readonly connectionManager: ConnectionManager,
     private readonly runnerService: RunnerService,
     private readonly outputChannel: vscode.OutputChannel,
-    jrxmlPath: string
+    jrxmlPath: string,
+    parameterValidator: ParameterValidator = defaultParameterValidator
   ) {
     this.panel = panel;
     this.jrxmlPath = jrxmlPath;
-    this.fieldAnalyzer = new FieldAnalyzer(runnerService, connectionManager);
+    this.parameterValidator = parameterValidator;
+    this.fieldAnalyzer = new FieldAnalyzer(
+      runnerService,
+      connectionManager,
+      jrxmlParser,
+      parameterValidator
+    );
 
     this.panel.webview.html = this.getHtmlForWebview(this.panel.webview);
 
@@ -55,7 +68,8 @@ export class FieldViewerPanel implements vscode.Disposable {
     connectionManager: ConnectionManager,
     runnerService: RunnerService,
     outputChannel: vscode.OutputChannel,
-    jrxmlPath: string
+    jrxmlPath: string,
+    parameterValidator: ParameterValidator = defaultParameterValidator
   ): FieldViewerPanel {
     const normalizedPath = path.resolve(jrxmlPath);
     const title = `Fields: ${path.basename(normalizedPath)}`;
@@ -93,7 +107,8 @@ export class FieldViewerPanel implements vscode.Disposable {
       connectionManager,
       runnerService,
       outputChannel,
-      normalizedPath
+      normalizedPath,
+      parameterValidator
     );
 
     return FieldViewerPanel.currentPanel;
@@ -105,8 +120,16 @@ export class FieldViewerPanel implements vscode.Disposable {
     }
     const savedPath = path.resolve(document.uri.fsPath);
     if (savedPath.toLowerCase() === FieldViewerPanel.currentPanel.jrxmlPath.toLowerCase()) {
+      FieldViewerPanel.currentPanel.parameterValidator.invalidateCache(savedPath);
       void FieldViewerPanel.currentPanel.loadStaticFields(document);
     }
+  }
+
+  public static handleConfigurationChanged(): void {
+    if (!FieldViewerPanel.currentPanel) {
+      return;
+    }
+    void FieldViewerPanel.currentPanel.loadStaticFields();
   }
 
   private findOpenDocument(): vscode.TextDocument | undefined {
@@ -116,13 +139,64 @@ export class FieldViewerPanel implements vscode.Disposable {
     );
   }
 
-  public async loadStaticFields(document?: vscode.TextDocument): Promise<void> {
+  private isValidationEnabled(): boolean {
+    const config = vscode.workspace.getConfiguration('jasper.validation');
+    return config.get<boolean>('enabled', true);
+  }
+
+  /**
+   * Adiciona metadados da coluna "Validação" fazendo cross-reference entre os
+   * `<field>` do relatório e os `<parameter>` esperados.
+   */
+  private renderFieldsWithValidation(
+    fields: JrxmlField[] | AnalyzedField[],
+    params: Record<string, any> = {}
+  ): AnalyzedField[] {
+    const openDoc = this.findOpenDocument();
+    const metadata = this.parameterValidator.getCachedMetadata(this.jrxmlPath, openDoc);
+    const analyzedList: AnalyzedField[] = fields.map((f: any) => ({
+      name: f.name,
+      javaClass: f.javaClass || f.className || 'java.lang.String',
+      jdbcType: f.jdbcType || '-',
+      nullable: f.nullable || '-',
+      description: f.description,
+      source: f.source || 'jrxml',
+      xmlDeclaredClass: f.xmlDeclaredClass || f.className || f.javaClass,
+      jdbcSuggestedClass: f.jdbcSuggestedClass,
+      expression: f.expression || `$F{${f.name}}`
+    }));
+
+    if (!this.isValidationEnabled()) {
+      return analyzedList;
+    }
+
+    return this.fieldAnalyzer.enrichFieldsWithValidation(
+      analyzedList,
+      metadata.parameters,
+      params
+    );
+  }
+
+  public async loadStaticFields(
+    document?: vscode.TextDocument,
+    params: Record<string, any> = {}
+  ): Promise<void> {
     try {
       const targetDoc = document ?? this.findOpenDocument();
-      const result = await this.fieldAnalyzer.analyzeStatic(this.jrxmlPath, targetDoc);
+      const result = await this.fieldAnalyzer.analyzeStatic(
+        this.jrxmlPath,
+        targetDoc,
+        params
+      );
+      const validatedFields = this.renderFieldsWithValidation(result.fields, params);
+      const payload: FieldAnalysisResult & { validationEnabled: boolean } = {
+        ...result,
+        fields: validatedFields,
+        validationEnabled: this.isValidationEnabled()
+      };
       await this.panel.webview.postMessage({
         command: 'renderFields',
-        data: result
+        data: payload
       });
     } catch (error) {
       const errMessage = error instanceof Error ? error.message : String(error);
@@ -155,6 +229,7 @@ export class FieldViewerPanel implements vscode.Disposable {
 
       this.log(`Inspecionando metadados JDBC da query de "${fileName}"...`);
       const result = await this.fieldAnalyzer.analyzeDatabase(this.jrxmlPath, openDoc);
+      const validatedFields = this.renderFieldsWithValidation(result.fields, {});
 
       this.log(
         `Introspecção JDBC concluída em ${result.executionTimeMs ?? 0}ms (${result.fields.length} campo(s) mapeado(s)).`
@@ -162,7 +237,11 @@ export class FieldViewerPanel implements vscode.Disposable {
 
       await this.panel.webview.postMessage({
         command: 'renderFields',
-        data: result
+        data: {
+          ...result,
+          fields: validatedFields,
+          validationEnabled: this.isValidationEnabled()
+        }
       });
     } catch (error) {
       const errMessage =

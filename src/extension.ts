@@ -4,6 +4,7 @@ import { ServerManager } from './services/serverManager';
 import { JasperServerClient } from './services/jasperServerClient';
 import { RunnerService } from './services/runnerService';
 import { jrxmlParser } from './services/jrxmlParser';
+import { parameterValidator } from './services/parameterValidator';
 import { JasperCompletionProvider, PROVIDER_SELECTOR } from './services/completionProvider';
 import { DatabaseTreeProvider } from './providers/databaseTreeProvider';
 import { ServerTreeProvider } from './providers/serverTreeProvider';
@@ -93,7 +94,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context,
     connectionManager,
     runnerService,
-    outputChannel
+    outputChannel,
+    parameterValidator
   );
   const serverDisposables = registerServerCommands(
     context,
@@ -118,8 +120,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const saveDocumentListener = vscode.workspace.onDidSaveTextDocument((document) => {
     if (document.fileName.toLowerCase().endsWith('.jrxml')) {
+      parameterValidator.invalidateCache(document.uri.fsPath);
       PreviewPanel.handleDidSaveTextDocument(document);
       FieldViewerPanel.handleDidSaveTextDocument(document);
+    }
+  });
+
+  const configChangeListener = vscode.workspace.onDidChangeConfiguration((event) => {
+    if (event.affectsConfiguration('jasper.validation')) {
+      PreviewPanel.handleConfigurationChanged();
+      FieldViewerPanel.handleConfigurationChanged();
     }
   });
 
@@ -138,6 +148,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     connectionListener,
     completionDisposable,
     saveDocumentListener,
+    configChangeListener,
     ...connectionDisposables,
     ...reportDisposables,
     ...serverDisposables

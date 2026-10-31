@@ -1,6 +1,7 @@
 import * as path from 'path';
 import { ConnectionManager } from './connectionManager';
-import { JrxmlField, JrxmlParser, jrxmlParser as defaultParser, TextDocumentLike } from './jrxmlParser';
+import { JrxmlField, JrxmlParameter, JrxmlParser, jrxmlParser as defaultParser, TextDocumentLike } from './jrxmlParser';
+import { ParameterValidator, parameterValidator as defaultValidator } from './parameterValidator';
 import { InspectQueryColumn, RunnerService } from './runnerService';
 
 export interface AnalyzedField {
@@ -13,6 +14,10 @@ export interface AnalyzedField {
   xmlDeclaredClass?: string;
   jdbcSuggestedClass?: string;
   expression: string;
+  validationStatus?: 'OK' | 'Tipo incompatível' | 'Obrigatório';
+  validationSeverity?: 'ok' | 'warning' | 'error';
+  validationMessage?: string;
+  relatedParameter?: string;
 }
 
 export interface FieldAnalysisResult {
@@ -60,13 +65,16 @@ export function formatNullable(nullableCode?: number): 'YES' | 'NO' | 'UNKNOWN' 
 
 export class FieldAnalyzer {
   private readonly parser: JrxmlParser;
+  private readonly validator: ParameterValidator;
 
   constructor(
     private readonly runnerService: RunnerService,
     private readonly connectionManager: ConnectionManager,
-    parser: JrxmlParser = defaultParser
+    parser: JrxmlParser = defaultParser,
+    validator: ParameterValidator = defaultValidator
   ) {
     this.parser = parser;
+    this.validator = validator;
   }
 
   /**
@@ -74,14 +82,15 @@ export class FieldAnalyzer {
    */
   public async analyzeStatic(
     reportPath: string,
-    document?: TextDocumentLike
+    document?: TextDocumentLike,
+    params: Record<string, any> = {}
   ): Promise<FieldAnalysisResult> {
     const metadata = document
       ? this.parser.getMetadata(document)
       : this.parser.getMetadata(reportPath);
     const activeProfile = await this.connectionManager.getActiveProfile();
 
-    const fields: AnalyzedField[] = metadata.fields.map((f: JrxmlField) => ({
+    const baseFields: AnalyzedField[] = metadata.fields.map((f: JrxmlField) => ({
       name: f.name,
       javaClass: f.className,
       jdbcType: '-',
@@ -91,6 +100,8 @@ export class FieldAnalyzer {
       xmlDeclaredClass: f.className,
       expression: `$F{${f.name}}`
     }));
+
+    const fields = this.enrichFieldsWithValidation(baseFields, metadata.parameters, params);
 
     return {
       reportName: path.basename(reportPath),
@@ -141,7 +152,12 @@ export class FieldAnalyzer {
       cliResponse.columns ??
       (Array.isArray(cliResponse.metadata?.columns) ? cliResponse.metadata.columns : []);
 
-    const fields = this.mergeFieldsAndColumns(metadata.fields, columns);
+    const mergedFields = this.mergeFieldsAndColumns(metadata.fields, columns);
+    const fields = this.enrichFieldsWithValidation(
+      mergedFields,
+      metadata.parameters,
+      params || {}
+    );
 
     return {
       reportName: path.basename(reportPath),
@@ -152,6 +168,32 @@ export class FieldAnalyzer {
       executionTimeMs: cliResponse.executionTimeMs,
       fields
     };
+  }
+
+  public enrichFieldsWithValidation(
+    fields: AnalyzedField[],
+    parameters: JrxmlParameter[],
+    params: Record<string, any> = {}
+  ): AnalyzedField[] {
+    const statusMap = this.validator.validateFields(fields, parameters, params);
+    return fields.map((field) => {
+      const validation = statusMap.get(field.name);
+      if (!validation) {
+        return {
+          ...field,
+          validationStatus: 'OK',
+          validationSeverity: 'ok',
+          validationMessage: `Tipo válido (${field.javaClass})`
+        };
+      }
+      return {
+        ...field,
+        validationStatus: validation.status,
+        validationSeverity: validation.severity,
+        validationMessage: validation.message,
+        relatedParameter: validation.relatedParameter
+      };
+    });
   }
 
   private mergeFieldsAndColumns(

@@ -56,7 +56,10 @@
     <section class="table-section">
       <div class="table-meta-bar">
         <span id="fieldCountLabel">0 campo(s)</span>
-        <span id="inspectionBadge" class="meta-tag">Origem: XML Estático</span>
+        <div class="table-meta-tags">
+          <span id="validationSummaryBadge" class="meta-tag hidden">Validação: OK</span>
+          <span id="inspectionBadge" class="meta-tag">Origem: XML Estático</span>
+        </div>
       </div>
 
       <div class="table-wrapper">
@@ -67,12 +70,13 @@
               <th>Java Class</th>
               <th>JDBC Type</th>
               <th>Nullable</th>
+              <th>Validação</th>
               <th class="col-actions">Ações</th>
             </tr>
           </thead>
           <tbody id="fieldsTableBody">
             <tr>
-              <td colspan="5" class="empty-state">Carregando campos do relatório...</td>
+              <td colspan="6" class="empty-state">Carregando campos do relatório...</td>
             </tr>
           </tbody>
         </table>

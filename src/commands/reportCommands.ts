@@ -10,6 +10,10 @@ import {
 } from '../services/runnerService';
 import { collectJrxmlFiles } from '../services/batchProcessor';
 import { jrxmlParser } from '../services/jrxmlParser';
+import {
+  ParameterValidator,
+  parameterValidator as defaultParameterValidator
+} from '../services/parameterValidator';
 import { PreviewPanel } from '../webviewPanels/previewPanel';
 import { FieldViewerPanel } from '../webviewPanels/fieldViewerPanel';
 
@@ -80,7 +84,8 @@ export function registerReportCommands(
   context: vscode.ExtensionContext,
   connectionManager: ConnectionManager,
   runnerService: RunnerService,
-  outputChannel: vscode.OutputChannel
+  outputChannel: vscode.OutputChannel,
+  parameterValidator: ParameterValidator = defaultParameterValidator
 ): vscode.Disposable[] {
   const compileCurrentReportCmd = vscode.commands.registerCommand(
     'jasper.compileCurrentReport',
@@ -190,7 +195,8 @@ export function registerReportCommands(
         connectionManager,
         runnerService,
         outputChannel,
-        filePath
+        filePath,
+        parameterValidator
       );
     }
   );
@@ -223,7 +229,8 @@ export function registerReportCommands(
         connectionManager,
         runnerService,
         outputChannel,
-        filePath
+        filePath,
+        parameterValidator
       );
     }
   );

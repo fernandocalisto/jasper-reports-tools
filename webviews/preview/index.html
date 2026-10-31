@@ -30,6 +30,13 @@
         <button type="button" id="toggleParamsBtn" class="btn btn-secondary" aria-expanded="true" title="Mostrar ou ocultar formulário de parâmetros">
           Parâmetros (<span id="paramCount">0</span>)
         </button>
+        <button type="button" id="validationBadge" class="validation-header-badge hidden" title="Clique para abrir/fechar o painel lateral de validação">
+          <span id="validationBadgeIcon" class="validation-badge-icon">&#9888;</span>
+          <span id="validationBadgeText">0 erros</span>
+        </button>
+        <button type="button" id="validateNowBtn" class="btn btn-secondary btn-compact" title="Executar validação completa dos parâmetros sob demanda">
+          Validar Agora
+        </button>
         <label class="checkbox-inline" title="Recarregar visualização automaticamente ao salvar o arquivo .jrxml (Ctrl+S)">
           <input type="checkbox" id="autoReloadToggle" checked />
           <span>Auto-reload ao salvar</span>
@@ -96,14 +103,44 @@
     </div>
   </div>
 
-  <main id="viewerViewport" class="viewer-viewport">
-    <div id="emptyState" class="empty-state">
-      <p id="emptyStateText">Preparando visualização do relatório...</p>
-    </div>
-    <div id="canvasWrapper" class="canvas-wrapper hidden">
-      <canvas id="pdfCanvas"></canvas>
-    </div>
-  </main>
+  <div class="preview-body-container">
+    <main id="viewerViewport" class="viewer-viewport">
+      <div id="emptyState" class="empty-state">
+        <p id="emptyStateText">Preparando visualização do relatório...</p>
+      </div>
+      <div id="canvasWrapper" class="canvas-wrapper hidden">
+        <canvas id="pdfCanvas"></canvas>
+      </div>
+    </main>
+
+    <aside id="validationSidePanel" class="validation-side-panel hidden" aria-label="Painel Lateral de Validação">
+      <div class="validation-panel-header">
+        <strong class="validation-panel-title">Validação de Parâmetros</strong>
+        <button type="button" id="closeValidationPanelBtn" class="btn btn-icon" title="Fechar painel de validação">
+          &times;
+        </button>
+      </div>
+      <div class="validation-panel-body">
+        <div id="validationEmptyHint" class="validation-empty-hint">
+          Nenhum erro ou aviso de validação.
+        </div>
+
+        <div id="validationErrorsGroup" class="validation-group hidden">
+          <div class="validation-group-header validation-group-errors">
+            <span>Erros (<span id="validationErrorsCount">0</span>)</span>
+          </div>
+          <ul id="validationErrorsList" class="validation-list"></ul>
+        </div>
+
+        <div id="validationWarningsGroup" class="validation-group hidden">
+          <div class="validation-group-header validation-group-warnings">
+            <span>Avisos (<span id="validationWarningsCount">0</span>)</span>
+          </div>
+          <ul id="validationWarningsList" class="validation-list"></ul>
+        </div>
+      </div>
+    </aside>
+  </div>
 
   <script src="{{pdfJsUri}}"></script>
   <script src="{{scriptUri}}"></script>

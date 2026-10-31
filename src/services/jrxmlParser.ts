@@ -1,11 +1,26 @@
 import * as fs from 'fs';
 
+export interface JrxmlParameterCondition {
+  parameter: string;
+  value?: any;
+  values?: any[];
+  operator?: 'eq' | 'neq' | 'in' | 'notEmpty';
+  severity?: 'error' | 'warning';
+}
+
 export interface JrxmlParameter {
   name: string;
   className: string;
   defaultValue?: string;
   description?: string;
   isForPrompting?: boolean;
+  min?: number;
+  max?: number;
+  pattern?: string;
+  validValues?: string[];
+  dependsOn?: string | JrxmlParameterCondition;
+  conditional?: JrxmlParameterCondition;
+  properties?: Record<string, string>;
 }
 
 export interface JrxmlField {
@@ -139,6 +154,64 @@ function extractChildTagContent(body: string, tagName: string): string | undefin
   return text.length > 0 ? text : undefined;
 }
 
+function extractParameterProperties(body: string): Record<string, string> {
+  const props: Record<string, string> = {};
+  const propRegex =
+    /<(?:[a-zA-Z0-9_]+:)?property\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:[a-zA-Z0-9_]+:)?property>)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = propRegex.exec(body)) !== null) {
+    const attrs = parseAttributes(match[1] || '');
+    const propName = attrs.name?.trim();
+    if (!propName) {
+      continue;
+    }
+    const propVal =
+      attrs.value !== undefined
+        ? attrs.value
+        : match[2] !== undefined
+          ? unwrapCdataAndTrim(match[2])
+          : '';
+    props[propName] = propVal;
+  }
+  return props;
+}
+
+function parseConditionExpression(raw: string): JrxmlParameterCondition | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const neqIdx = trimmed.indexOf('!=');
+  if (neqIdx > 0) {
+    return {
+      parameter: trimmed.slice(0, neqIdx).trim(),
+      value: trimmed.slice(neqIdx + 2).trim(),
+      operator: 'neq'
+    };
+  }
+  const eqIdx = trimmed.indexOf('=');
+  if (eqIdx > 0) {
+    const paramName = trimmed.slice(0, eqIdx).trim();
+    const rhs = trimmed.slice(eqIdx + 1).trim();
+    if (rhs.includes(',')) {
+      return {
+        parameter: paramName,
+        values: rhs.split(',').map((s) => s.trim()).filter(Boolean),
+        operator: 'in'
+      };
+    }
+    return {
+      parameter: paramName,
+      value: rhs,
+      operator: 'eq'
+    };
+  }
+  return {
+    parameter: trimmed,
+    operator: 'notEmpty'
+  };
+}
+
 /**
  * Remove blocos `<subDataset>...</subDataset>` do nível raiz para extrair apenas
  * os parâmetros, campos e query principais do relatório.
@@ -181,6 +254,7 @@ export function parseJrxml(xmlContent: string): JrxmlMetadata {
     const defaultValue =
       rawDefaultExpr !== undefined ? normalizeDefaultValueExpression(rawDefaultExpr) : undefined;
     const description = extractChildTagContent(body, 'parameterDescription');
+    const properties = extractParameterProperties(body);
 
     const paramEntry: JrxmlParameter = {
       name: rawName,
@@ -193,6 +267,74 @@ export function parseJrxml(xmlContent: string): JrxmlMetadata {
     }
     if (description !== undefined) {
       paramEntry.description = description;
+    }
+    if (Object.keys(properties).length > 0) {
+      paramEntry.properties = properties;
+    }
+
+    const rawMin =
+      attrs.min ??
+      properties['min'] ??
+      properties['validation.min'] ??
+      properties['net.sf.jasperreports.validation.min'];
+    if (rawMin !== undefined && rawMin.trim() !== '' && !Number.isNaN(Number(rawMin))) {
+      paramEntry.min = Number(rawMin);
+    }
+
+    const rawMax =
+      attrs.max ??
+      properties['max'] ??
+      properties['validation.max'] ??
+      properties['net.sf.jasperreports.validation.max'];
+    if (rawMax !== undefined && rawMax.trim() !== '' && !Number.isNaN(Number(rawMax))) {
+      paramEntry.max = Number(rawMax);
+    }
+
+    const rawPattern =
+      attrs.pattern ??
+      properties['pattern'] ??
+      properties['regex'] ??
+      properties['validation.pattern'] ??
+      properties['net.sf.jasperreports.validation.pattern'];
+    if (rawPattern !== undefined && rawPattern.trim() !== '') {
+      paramEntry.pattern = rawPattern.trim();
+    }
+
+    const rawValidValues =
+      attrs.validValues ??
+      attrs.enum ??
+      attrs.allowedValues ??
+      properties['validValues'] ??
+      properties['enum'] ??
+      properties['allowedValues'] ??
+      properties['options'] ??
+      properties['validation.enum'] ??
+      properties['validation.validValues'] ??
+      properties['net.sf.jasperreports.validation.enum'];
+    if (rawValidValues !== undefined && rawValidValues.trim() !== '') {
+      paramEntry.validValues = rawValidValues
+        .split(/[|,]/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    }
+
+    const rawDependsOn =
+      attrs.dependsOn ??
+      attrs.requiredIf ??
+      attrs.requiredWhen ??
+      attrs.conditional ??
+      properties['dependsOn'] ??
+      properties['requiredIf'] ??
+      properties['requiredWhen'] ??
+      properties['conditional'] ??
+      properties['validation.conditional'] ??
+      properties['net.sf.jasperreports.validation.conditional'];
+    if (rawDependsOn !== undefined && rawDependsOn.trim() !== '') {
+      const parsedCond = parseConditionExpression(rawDependsOn);
+      if (parsedCond) {
+        paramEntry.dependsOn = rawDependsOn.trim();
+        paramEntry.conditional = parsedCond;
+      }
     }
 
     parameters.push(paramEntry);

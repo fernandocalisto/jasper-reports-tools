@@ -729,7 +729,34 @@
         "key": "enter",
         "when": "view == jasper-servers && listFocus && viewItem =~ /^serverReport/"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "JasperReports",
+      "properties": {
+        "jasper.validation.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ativa ou desativa a validação automática de parâmetros no Preview e no Field Viewer."
+        },
+        "jasper.validation.autoValidateOnPreviewOpen": {
+          "type": "boolean",
+          "default": true,
+          "description": "Valida automaticamente os parâmetros do relatório ao abrir o painel de Preview."
+        },
+        "jasper.validation.debounceMs": {
+          "type": "number",
+          "default": 300,
+          "minimum": 50,
+          "maximum": 5000,
+          "description": "Tempo de debounce (em ms) para validação em tempo real ao editar parâmetros."
+        },
+        "jasper.validation.showWarningsAsErrors": {
+          "type": "boolean",
+          "default": false,
+          "description": "Exibe avisos de validação (como range numérico e regex) como erros que bloqueiam a execução."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

@@ -13,6 +13,10 @@
   const exportJasperBtn = document.getElementById('exportJasperBtn');
   const toggleParamsBtn = document.getElementById('toggleParamsBtn');
   const paramCountSpan = document.getElementById('paramCount');
+  const validationBadge = document.getElementById('validationBadge');
+  const validationBadgeIcon = document.getElementById('validationBadgeIcon');
+  const validationBadgeText = document.getElementById('validationBadgeText');
+  const validateNowBtn = document.getElementById('validateNowBtn');
   const autoReloadToggle = document.getElementById('autoReloadToggle');
 
   const prevPageBtn = document.getElementById('prevPageBtn');
@@ -44,11 +48,31 @@
   const canvasWrapper = document.getElementById('canvasWrapper');
   const pdfCanvas = document.getElementById('pdfCanvas');
 
+  const validationSidePanel = document.getElementById('validationSidePanel');
+  const closeValidationPanelBtn = document.getElementById('closeValidationPanelBtn');
+  const validationEmptyHint = document.getElementById('validationEmptyHint');
+  const validationErrorsGroup = document.getElementById('validationErrorsGroup');
+  const validationErrorsCount = document.getElementById('validationErrorsCount');
+  const validationErrorsList = document.getElementById('validationErrorsList');
+  const validationWarningsGroup = document.getElementById('validationWarningsGroup');
+  const validationWarningsCount = document.getElementById('validationWarningsCount');
+  const validationWarningsList = document.getElementById('validationWarningsList');
+
   // Estado interno
   let currentParameters = [];
   const paramValues = Object.create(null);
   let paramsCollapsed = false;
   let isProcessing = false;
+  let validationSettings = {
+    enabled: true,
+    autoValidateOnPreviewOpen: true,
+    debounceMs: 300,
+    showWarningsAsErrors: false
+  };
+  let currentValidationResults = [];
+  let hasBlockingErrors = false;
+  let validationDebounceTimer = null;
+  let sidePanelOpen = false;
 
   // Estado do PDF.js
   let pdfDoc = null;
@@ -59,13 +83,22 @@
   let activeRenderTask = null;
   let pendingRenderPage = null;
 
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   function setLoading(loading, message) {
     isProcessing = Boolean(loading);
     if (loadingBar) {
       loadingBar.classList.toggle('hidden', !isProcessing);
     }
     if (refreshBtn) {
-      refreshBtn.disabled = isProcessing;
+      refreshBtn.disabled = isProcessing || (validationSettings.enabled && hasBlockingErrors);
       refreshBtn.textContent = isProcessing ? 'Processando...' : 'Atualizar';
     }
     if (exportPdfBtn) {
@@ -115,19 +148,28 @@
     }
     if (
       normalized === 'java.util.Date' ||
+      normalized === 'Date' ||
       normalized === 'java.sql.Date' ||
       normalized === 'java.sql.Timestamp' ||
+      normalized === 'Timestamp' ||
       normalized === 'java.time.LocalDate' ||
-      normalized === 'java.time.LocalDateTime'
+      normalized === 'LocalDate' ||
+      normalized === 'java.time.LocalDateTime' ||
+      normalized === 'LocalDateTime'
     ) {
       return 'date';
     }
     if (
       normalized === 'java.lang.Integer' ||
+      normalized === 'Integer' ||
       normalized === 'java.lang.Long' ||
+      normalized === 'Long' ||
       normalized === 'java.lang.Short' ||
+      normalized === 'Short' ||
       normalized === 'java.lang.Byte' ||
+      normalized === 'Byte' ||
       normalized === 'java.math.BigInteger' ||
+      normalized === 'BigInteger' ||
       normalized === 'int' ||
       normalized === 'long'
     ) {
@@ -135,9 +177,13 @@
     }
     if (
       normalized === 'java.math.BigDecimal' ||
+      normalized === 'BigDecimal' ||
       normalized === 'java.lang.Double' ||
+      normalized === 'Double' ||
       normalized === 'java.lang.Float' ||
+      normalized === 'Float' ||
       normalized === 'java.lang.Number' ||
+      normalized === 'Number' ||
       normalized === 'double' ||
       normalized === 'float'
     ) {
@@ -189,14 +235,13 @@
       const brMatch = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(trimmed);
       if (brMatch) {
         return {
-          value: brMatch[3] + '-' + brMatch[2] + '-' + brMatch[1],
+          value: trimmed,
           placeholder: ''
         };
       }
       return { value: '', placeholder: 'Padrão: ' + trimmed };
     }
 
-    // String e demais tipos
     if (
       trimmed.startsWith('new ') ||
       trimmed.includes('$P{') ||
@@ -206,6 +251,486 @@
       return { value: '', placeholder: 'Padrão: ' + trimmed };
     }
     return { value: trimmed, placeholder: '' };
+  }
+
+  function collectRawParams() {
+    const collected = {};
+    if (!paramsForm) {
+      return collected;
+    }
+    const inputs = paramsForm.querySelectorAll('[data-param-name]');
+    for (let i = 0; i < inputs.length; i++) {
+      const el = inputs[i];
+      const name = el.dataset.paramName;
+      const category = el.dataset.paramCategory;
+      if (category === 'boolean') {
+        collected[name] = Boolean(el.checked);
+        paramValues[name] = Boolean(el.checked);
+      } else {
+        const rawValue = (el.value || '').trim();
+        collected[name] = rawValue;
+        paramValues[name] = rawValue;
+      }
+    }
+    return collected;
+  }
+
+  function isValidCalendarDateClient(year, month, day) {
+    if (year < 1000 || year > 9999 || month < 1 || month > 12) {
+      return false;
+    }
+    let maxDay = 31;
+    if (month === 2) {
+      const isLeap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+      maxDay = isLeap ? 29 : 28;
+    } else if ([4, 6, 9, 11].includes(month)) {
+      maxDay = 30;
+    }
+    return day >= 1 && day <= maxDay;
+  }
+
+  function isValidDateStringClient(str) {
+    const iso = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s]\d{2}:\d{2}(?::\d{2})?)?$/.exec(str);
+    if (iso) {
+      return isValidCalendarDateClient(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+    }
+    const br = /^(\d{2})\/(\d{2})\/(\d{4})(?:\s+\d{2}:\d{2}(?::\d{2})?)?$/.exec(str);
+    if (br) {
+      return isValidCalendarDateClient(Number(br[3]), Number(br[2]), Number(br[1]));
+    }
+    return false;
+  }
+
+  function evaluateClientValidation(paramsMap) {
+    const results = [];
+    const promoteWarnings = Boolean(validationSettings.showWarningsAsErrors);
+
+    currentParameters.forEach(function (param) {
+      const category = getParamCategory(param.className);
+      const rawVal = paramsMap[param.name];
+      const isEmpty =
+        rawVal === undefined ||
+        rawVal === null ||
+        (typeof rawVal === 'string' && rawVal.trim() === '');
+
+      // 1. Condicional
+      if (param.conditional || param.dependsOn) {
+        const cond = param.conditional;
+        if (cond && cond.parameter) {
+          const depVal = paramsMap[cond.parameter];
+          const depStr = depVal === undefined || depVal === null ? '' : String(depVal).trim();
+          const triggered =
+            cond.value !== undefined
+              ? depStr === String(cond.value).trim()
+              : depStr.length > 0;
+          if (triggered && isEmpty) {
+            results.push({
+              parameterName: param.name,
+              ruleType: 'conditional',
+              passed: false,
+              severity: 'error',
+              message:
+                cond.value !== undefined
+                  ? 'Obrigatório quando "' + cond.parameter + '" é "' + cond.value + '"'
+                  : 'Obrigatório quando "' + cond.parameter + '" está preenchido'
+            });
+          }
+        }
+      } else if (param.isForPrompting !== false && isEmpty) {
+        // 2. Obrigatório
+        results.push({
+          parameterName: param.name,
+          ruleType: 'required',
+          passed: false,
+          severity: 'error',
+          message: 'Parâmetro obrigatório'
+        });
+      }
+
+      if (isEmpty) {
+        return;
+      }
+
+      const strVal = String(rawVal).trim();
+
+      // 3. Tipo
+      if (category === 'integer' && !/^-?\d+$/.test(strVal)) {
+        results.push({
+          parameterName: param.name,
+          ruleType: 'type',
+          passed: false,
+          severity: 'error',
+          message: 'Esperado número inteiro'
+        });
+        return;
+      }
+
+      if (category === 'decimal' && !/^-?\d+([.,]\d+)?$/.test(strVal)) {
+        results.push({
+          parameterName: param.name,
+          ruleType: 'type',
+          passed: false,
+          severity: 'error',
+          message: 'Esperado valor numérico'
+        });
+        return;
+      }
+
+      // 4. Formato Data
+      if (category === 'date' && !isValidDateStringClient(strVal)) {
+        results.push({
+          parameterName: param.name,
+          ruleType: 'format',
+          passed: false,
+          severity: 'error',
+          message: 'Data inválida'
+        });
+      }
+
+      // 5. Range numérico
+      if (
+        (category === 'integer' || category === 'decimal') &&
+        (param.min !== undefined || param.max !== undefined)
+      ) {
+        const num = Number(strVal.replace(',', '.'));
+        if (!Number.isNaN(num)) {
+          const belowMin = param.min !== undefined && num < Number(param.min);
+          const aboveMax = param.max !== undefined && num > Number(param.max);
+          if (belowMin || aboveMax) {
+            let msg = 'Valor fora do range permitido';
+            if (param.min !== undefined && param.max !== undefined) {
+              msg = 'Valor fora do range ' + param.min + '-' + param.max;
+            } else if (param.min !== undefined) {
+              msg = 'Valor fora do range (mínimo: ' + param.min + ')';
+            } else if (param.max !== undefined) {
+              msg = 'Valor fora do range (máximo: ' + param.max + ')';
+            }
+            results.push({
+              parameterName: param.name,
+              ruleType: 'range',
+              passed: false,
+              severity: promoteWarnings ? 'error' : 'warning',
+              message: msg
+            });
+          }
+        }
+      }
+
+      // 6. Pattern/Regex
+      if (category === 'string' && param.pattern) {
+        try {
+          const re = new RegExp(param.pattern);
+          if (!re.test(strVal)) {
+            results.push({
+              parameterName: param.name,
+              ruleType: 'pattern',
+              passed: false,
+              severity: promoteWarnings ? 'error' : 'warning',
+              message: 'Formato inválido'
+            });
+          }
+        } catch {
+          // Regex inválida no JRXML é ignorada
+        }
+      }
+
+      // 7. Enum
+      if (Array.isArray(param.validValues) && param.validValues.length > 0) {
+        const allowed = param.validValues.some(function (v) {
+          return String(v).trim() === strVal;
+        });
+        if (!allowed) {
+          results.push({
+            parameterName: param.name,
+            ruleType: 'enum',
+            passed: false,
+            severity: 'error',
+            message: 'Valor não permitido'
+          });
+        }
+      }
+    });
+
+    return results;
+  }
+
+  function scheduleValidation(immediate) {
+    if (validationDebounceTimer) {
+      clearTimeout(validationDebounceTimer);
+      validationDebounceTimer = null;
+    }
+
+    if (!validationSettings.enabled && !immediate) {
+      return;
+    }
+
+    const delay = immediate ? 0 : Math.max(50, Number(validationSettings.debounceMs) || 300);
+    validationDebounceTimer = setTimeout(function () {
+      const currentMap = collectRawParams();
+      const localResults = evaluateClientValidation(currentMap);
+      applyValidationResults(localResults);
+      vscode.postMessage({
+        command: 'validateParameters',
+        params: currentMap
+      });
+    }, delay);
+  }
+
+  function getRuleLabel(ruleType) {
+    switch (ruleType) {
+      case 'required':
+        return 'Obrigatório';
+      case 'type':
+        return 'Tipo';
+      case 'format':
+        return 'Data';
+      case 'range':
+        return 'Range';
+      case 'pattern':
+        return 'Regex';
+      case 'enum':
+        return 'Enum';
+      case 'conditional':
+        return 'Condicional';
+      default:
+        return ruleType || 'Regra';
+    }
+  }
+
+  function focusParameterInput(paramName) {
+    if (!paramName) {
+      return;
+    }
+    if (paramsCollapsed && paramsSection) {
+      paramsCollapsed = false;
+      paramsSection.classList.remove('hidden');
+      if (toggleParamsBtn) {
+        toggleParamsBtn.setAttribute('aria-expanded', 'true');
+      }
+    }
+    const targetInput = document.getElementById('param_' + paramName);
+    if (targetInput) {
+      targetInput.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      targetInput.focus();
+      if (typeof targetInput.select === 'function' && targetInput.type === 'text') {
+        targetInput.select();
+      }
+    }
+  }
+
+  function applyValidationResults(results) {
+    currentValidationResults = Array.isArray(results) ? results : [];
+
+    // 1. Limpa estados inline anteriores
+    if (paramsForm) {
+      const inputs = paramsForm.querySelectorAll('[data-param-name]');
+      for (let i = 0; i < inputs.length; i++) {
+        const el = inputs[i];
+        el.classList.remove('input-invalid', 'input-error', 'input-warning');
+        el.removeAttribute('title');
+      }
+      const msgEls = paramsForm.querySelectorAll('.param-validation-msg');
+      for (let i = 0; i < msgEls.length; i++) {
+        msgEls[i].textContent = '';
+        msgEls[i].className = 'param-validation-msg hidden';
+      }
+    }
+
+    const byParam = Object.create(null);
+    const errors = [];
+    const warnings = [];
+
+    currentValidationResults.forEach(function (res) {
+      if (res.passed) {
+        return;
+      }
+      if (!byParam[res.parameterName]) {
+        byParam[res.parameterName] = [];
+      }
+      byParam[res.parameterName].push(res);
+      if (res.severity === 'error') {
+        errors.push(res);
+      } else {
+        warnings.push(res);
+      }
+    });
+
+    hasBlockingErrors = errors.length > 0;
+
+    // 2. Aplica estilos inline por campo (borda vermelha/amarela + tooltip)
+    Object.keys(byParam).forEach(function (paramName) {
+      const items = byParam[paramName];
+      const hasError = items.some(function (it) {
+        return it.severity === 'error';
+      });
+      const messages = items
+        .map(function (it) {
+          return it.message;
+        })
+        .join(' | ');
+
+      const inputEl = document.getElementById('param_' + paramName);
+      if (inputEl) {
+        inputEl.classList.add(hasError ? 'input-error' : 'input-warning');
+        if (hasError) {
+          inputEl.classList.add('input-invalid');
+        }
+        inputEl.title = messages;
+      }
+
+      const msgEl = document.getElementById('val_msg_' + paramName);
+      if (msgEl) {
+        msgEl.textContent = messages;
+        msgEl.title = messages;
+        msgEl.className =
+          'param-validation-msg ' + (hasError ? 'msg-error' : 'msg-warning');
+      }
+    });
+
+    // 3. Atualiza Badge no Header
+    if (validationBadge && validationBadgeText && validationBadgeIcon) {
+      validationBadge.classList.remove('hidden', 'badge-error', 'badge-warning', 'badge-ok');
+
+      if (!validationSettings.enabled || currentParameters.length === 0) {
+        if (errors.length === 0 && warnings.length === 0) {
+          validationBadge.classList.add('hidden');
+        }
+      }
+
+      if (errors.length > 0 || warnings.length > 0) {
+        const parts = [];
+        if (errors.length > 0) {
+          parts.push(errors.length + (errors.length === 1 ? ' erro' : ' erros'));
+        }
+        if (warnings.length > 0) {
+          parts.push(warnings.length + (warnings.length === 1 ? ' aviso' : ' avisos'));
+        }
+        validationBadgeIcon.textContent = '\u26A0';
+        validationBadgeText.textContent = parts.join(', ');
+        validationBadge.classList.add(errors.length > 0 ? 'badge-error' : 'badge-warning');
+        validationBadge.classList.remove('hidden');
+      } else if (validationSettings.enabled && currentParameters.length > 0) {
+        validationBadgeIcon.textContent = '\u2713';
+        validationBadgeText.textContent = 'Parâmetros válidos';
+        validationBadge.classList.add('badge-ok');
+      } else {
+        validationBadge.classList.add('hidden');
+      }
+    }
+
+    // 4. Atualiza estado do botão "Atualizar"
+    updateActionButtonsState(errors, warnings);
+
+    // 5. Atualiza Painel Lateral de Validação
+    renderValidationSidePanel(errors, warnings);
+  }
+
+  function updateActionButtonsState(errors, warnings) {
+    if (!refreshBtn) {
+      return;
+    }
+    if (validationSettings.enabled && errors.length > 0) {
+      refreshBtn.disabled = true;
+      const summary = errors
+        .map(function (e) {
+          return e.parameterName + ': ' + e.message;
+        })
+        .join('; ');
+      refreshBtn.title =
+        'Execução bloqueada (' +
+        errors.length +
+        (errors.length === 1 ? ' erro' : ' erros') +
+        '): ' +
+        summary;
+    } else {
+      refreshBtn.disabled = isProcessing;
+      if (warnings && warnings.length > 0) {
+        refreshBtn.title =
+          'Compilar e preencher relatório (' +
+          warnings.length +
+          (warnings.length === 1 ? ' aviso' : ' avisos') +
+          ' não bloqueante(s))';
+      } else {
+        refreshBtn.title = 'Compilar e preencher relatório com os parâmetros atuais';
+      }
+    }
+  }
+
+  function renderValidationSidePanel(errors, warnings) {
+    if (!validationSidePanel) {
+      return;
+    }
+    const hasAny = errors.length > 0 || warnings.length > 0;
+    if (validationEmptyHint) {
+      validationEmptyHint.classList.toggle('hidden', hasAny);
+    }
+
+    if (validationErrorsGroup && validationErrorsCount && validationErrorsList) {
+      validationErrorsCount.textContent = String(errors.length);
+      validationErrorsGroup.classList.toggle('hidden', errors.length === 0);
+      validationErrorsList.innerHTML = errors
+        .map(function (err) {
+          return (
+            '<li class="validation-item item-error" data-param-name="' +
+            escapeHtml(err.parameterName) +
+            '" title="Clique para focar no campo ' +
+            escapeHtml(err.parameterName) +
+            '">' +
+            '<div class="validation-item-header">' +
+            '<span class="validation-item-param">' +
+            escapeHtml(err.parameterName) +
+            '</span>' +
+            '<span class="validation-item-rule">' +
+            escapeHtml(getRuleLabel(err.ruleType || (err.rule && err.rule.type))) +
+            '</span>' +
+            '</div>' +
+            '<span class="validation-item-msg">' +
+            escapeHtml(err.message) +
+            '</span>' +
+            '</li>'
+          );
+        })
+        .join('');
+    }
+
+    if (validationWarningsGroup && validationWarningsCount && validationWarningsList) {
+      validationWarningsCount.textContent = String(warnings.length);
+      validationWarningsGroup.classList.toggle('hidden', warnings.length === 0);
+      validationWarningsList.innerHTML = warnings
+        .map(function (warn) {
+          return (
+            '<li class="validation-item item-warning" data-param-name="' +
+            escapeHtml(warn.parameterName) +
+            '" title="Clique para focar no campo ' +
+            escapeHtml(warn.parameterName) +
+            '">' +
+            '<div class="validation-item-header">' +
+            '<span class="validation-item-param">' +
+            escapeHtml(warn.parameterName) +
+            '</span>' +
+            '<span class="validation-item-rule">' +
+            escapeHtml(getRuleLabel(warn.ruleType || (warn.rule && warn.rule.type))) +
+            '</span>' +
+            '</div>' +
+            '<span class="validation-item-msg">' +
+            escapeHtml(warn.message) +
+            '</span>' +
+            '</li>'
+          );
+        })
+        .join('');
+    }
+  }
+
+  function toggleSidePanel(forceState) {
+    if (!validationSidePanel) {
+      return;
+    }
+    sidePanelOpen = typeof forceState === 'boolean' ? forceState : !sidePanelOpen;
+    validationSidePanel.classList.toggle('hidden', !sidePanelOpen);
+    if (pdfDoc && fitWidthMode && currentPage >= 1) {
+      renderPage(currentPage);
+    }
   }
 
   function renderParametersForm(parameters) {
@@ -251,6 +776,13 @@
       label.className = 'param-label';
       label.setAttribute('for', 'param_' + param.name);
       label.textContent = param.name;
+      if (param.isForPrompting !== false && !param.conditional && !param.dependsOn) {
+        const reqMark = document.createElement('span');
+        reqMark.className = 'param-required-mark';
+        reqMark.textContent = '*';
+        reqMark.title = 'Parâmetro obrigatório';
+        label.appendChild(reqMark);
+      }
       if (param.description) {
         label.title = param.description + ' (' + param.className + ')';
       } else {
@@ -284,6 +816,7 @@
         checkbox.addEventListener('change', function () {
           paramValues[param.name] = checkbox.checked;
           statusText.textContent = checkbox.checked ? 'true (Sim)' : 'false (Não)';
+          scheduleValidation(false);
         });
 
         wrapper.appendChild(checkbox);
@@ -297,21 +830,40 @@
         input.dataset.paramName = param.name;
         input.dataset.paramCategory = category;
         input.autocomplete = 'off';
+        input.type = 'text';
 
         if (category === 'date') {
-          input.type = 'date';
-        } else {
-          input.type = 'text';
-          if (category === 'integer') {
-            input.inputMode = 'numeric';
-            input.placeholder = initial.placeholder || 'Ex: 12345';
-          } else if (category === 'decimal') {
-            input.inputMode = 'decimal';
-            input.placeholder = initial.placeholder || 'Ex: 150,00';
+          input.placeholder = initial.placeholder || 'dd/MM/yyyy ou yyyy-MM-dd';
+        } else if (category === 'integer') {
+          input.inputMode = 'numeric';
+          if (param.min !== undefined && param.max !== undefined) {
+            input.placeholder = initial.placeholder || 'Range: ' + param.min + '-' + param.max;
           } else {
-            input.placeholder =
-              initial.placeholder || param.description || 'Valor para ' + param.name;
+            input.placeholder = initial.placeholder || 'Ex: 12345';
           }
+        } else if (category === 'decimal') {
+          input.inputMode = 'decimal';
+          if (param.min !== undefined && param.max !== undefined) {
+            input.placeholder = initial.placeholder || 'Range: ' + param.min + '-' + param.max;
+          } else {
+            input.placeholder = initial.placeholder || 'Ex: 150,00';
+          }
+        } else {
+          input.placeholder =
+            initial.placeholder || param.description || 'Valor para ' + param.name;
+        }
+
+        if (Array.isArray(param.validValues) && param.validValues.length > 0) {
+          const datalistId = 'datalist_param_' + param.name;
+          input.setAttribute('list', datalistId);
+          const datalist = document.createElement('datalist');
+          datalist.id = datalistId;
+          param.validValues.forEach(function (val) {
+            const opt = document.createElement('option');
+            opt.value = String(val);
+            datalist.appendChild(opt);
+          });
+          fieldContainer.appendChild(datalist);
         }
 
         input.value =
@@ -320,86 +872,45 @@
             : '';
 
         input.addEventListener('input', function () {
-          if (category === 'integer') {
-            const sanitized = input.value.replace(/[^0-9-]/g, '').replace(/(?!^)-/g, '');
-            if (sanitized !== input.value) {
-              input.value = sanitized;
-            }
-            const valid = sanitized === '' || /^-?\d+$/.test(sanitized);
-            input.classList.toggle('input-invalid', !valid);
-          } else if (category === 'decimal') {
-            const sanitized = input.value
-              .replace(/[^0-9.,-]/g, '')
-              .replace(/(?!^)-/g, '');
-            if (sanitized !== input.value) {
-              input.value = sanitized;
-            }
-            const valid = sanitized === '' || /^-?\d+([.,]\d+)?$/.test(sanitized);
-            input.classList.toggle('input-invalid', !valid);
-          }
           paramValues[param.name] = input.value;
+          scheduleValidation(false);
         });
 
         fieldContainer.appendChild(input);
       }
+
+      const valMsg = document.createElement('div');
+      valMsg.id = 'val_msg_' + param.name;
+      valMsg.className = 'param-validation-msg hidden';
+      fieldContainer.appendChild(valMsg);
 
       paramsForm.appendChild(fieldContainer);
     });
   }
 
   function validateAndCollectParams() {
-    const collected = {};
-    if (!paramsForm) {
-      return { valid: true, params: collected };
-    }
-
-    const inputs = paramsForm.querySelectorAll('[data-param-name]');
-    for (let i = 0; i < inputs.length; i++) {
-      const el = inputs[i];
-      const name = el.dataset.paramName;
-      const category = el.dataset.paramCategory;
-
-      if (category === 'boolean') {
-        collected[name] = Boolean(el.checked);
-        paramValues[name] = Boolean(el.checked);
-        continue;
-      }
-
-      const rawValue = (el.value || '').trim();
-      paramValues[name] = rawValue;
-
-      if (!rawValue) {
-        continue;
-      }
-
-      if (category === 'integer' && !/^-?\d+$/.test(rawValue)) {
-        el.classList.add('input-invalid');
-        el.focus();
+    const collected = collectRawParams();
+    if (validationSettings.enabled) {
+      const results = evaluateClientValidation(collected);
+      applyValidationResults(results);
+      vscode.postMessage({
+        command: 'validateParameters',
+        params: collected
+      });
+      const errors = results.filter(function (r) {
+        return !r.passed && r.severity === 'error';
+      });
+      if (errors.length > 0) {
+        focusParameterInput(errors[0].parameterName);
         showBanner(
-          'Parâmetro inválido',
-          'O parâmetro "' + name + '" requer um número inteiro válido.',
+          'Erro de Validação',
+          errors[0].parameterName + ': ' + errors[0].message,
           'error',
           false
         );
         return { valid: false, params: collected };
       }
-
-      if (category === 'decimal' && !/^-?\d+([.,]\d+)?$/.test(rawValue)) {
-        el.classList.add('input-invalid');
-        el.focus();
-        showBanner(
-          'Parâmetro inválido',
-          'O parâmetro "' + name + '" requer um valor numérico válido.',
-          'error',
-          false
-        );
-        return { valid: false, params: collected };
-      }
-
-      el.classList.remove('input-invalid');
-      collected[name] = rawValue;
     }
-
     return { valid: true, params: collected };
   }
 
@@ -596,6 +1107,45 @@
     });
   }
 
+  if (validateNowBtn) {
+    validateNowBtn.addEventListener('click', function () {
+      const currentMap = collectRawParams();
+      const results = evaluateClientValidation(currentMap);
+      applyValidationResults(results);
+      vscode.postMessage({
+        command: 'validateParameters',
+        params: currentMap
+      });
+      if (results.length > 0 && !sidePanelOpen) {
+        toggleSidePanel(true);
+      }
+    });
+  }
+
+  if (validationBadge) {
+    validationBadge.addEventListener('click', function () {
+      toggleSidePanel();
+    });
+  }
+
+  if (closeValidationPanelBtn) {
+    closeValidationPanelBtn.addEventListener('click', function () {
+      toggleSidePanel(false);
+    });
+  }
+
+  if (validationSidePanel) {
+    validationSidePanel.addEventListener('click', function (event) {
+      const target = event.target;
+      const item =
+        target && target.closest ? target.closest('.validation-item') : null;
+      if (item) {
+        const paramName = item.getAttribute('data-param-name');
+        focusParameterInput(paramName);
+      }
+    });
+  }
+
   if (paramsForm) {
     paramsForm.addEventListener('submit', function (event) {
       event.preventDefault();
@@ -747,10 +1297,69 @@
         if (autoReloadToggle && typeof message.autoReload === 'boolean') {
           autoReloadToggle.checked = message.autoReload;
         }
+        if (message.validationSettings) {
+          validationSettings = Object.assign(
+            {},
+            validationSettings,
+            message.validationSettings
+          );
+        }
+
         renderParametersForm(message.parameters || []);
 
-        if (message.autoRun) {
+        if (
+          validationSettings.enabled &&
+          validationSettings.autoValidateOnPreviewOpen
+        ) {
+          if (Array.isArray(message.initialValidationResults)) {
+            applyValidationResults(message.initialValidationResults);
+          } else {
+            const currentMap = collectRawParams();
+            applyValidationResults(evaluateClientValidation(currentMap));
+          }
+          if (hasBlockingErrors && emptyStateText && !pdfDoc) {
+            emptyStateText.textContent =
+              'Preencha os parâmetros obrigatórios ou corrija os erros de validação para gerar o preview.';
+          }
+        } else {
+          applyValidationResults([]);
+        }
+
+        if (message.autoRun && !hasBlockingErrors) {
           triggerRunReport(false);
+        }
+        break;
+      }
+
+      case 'updateValidationSettings': {
+        if (message.validationSettings) {
+          validationSettings = Object.assign(
+            {},
+            validationSettings,
+            message.validationSettings
+          );
+          if (!validationSettings.enabled) {
+            applyValidationResults([]);
+          } else {
+            scheduleValidation(true);
+          }
+        }
+        break;
+      }
+
+      case 'validationResults': {
+        if (Array.isArray(message.results)) {
+          applyValidationResults(message.results);
+        }
+        break;
+      }
+
+      case 'updateActionButtons': {
+        hasBlockingErrors = Boolean(message.hasErrors);
+        if (refreshBtn && validationSettings.enabled && hasBlockingErrors) {
+          refreshBtn.disabled = true;
+        } else if (refreshBtn && !isProcessing) {
+          refreshBtn.disabled = false;
         }
         break;
       }
@@ -802,7 +1411,8 @@
       case 'reportError': {
         setLoading(false);
         if (!pdfDoc && emptyState && emptyStateText) {
-          emptyStateText.textContent = 'Não foi possível gerar a visualização do relatório.';
+          emptyStateText.textContent =
+            'Não foi possível gerar a visualização do relatório.';
           emptyState.classList.remove('hidden');
         }
         showBanner(

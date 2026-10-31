@@ -32,7 +32,7 @@ import java.util.Map;
 public class CommandHandler {
 
     public static final List<String> ACTIONS =
-            Arrays.asList("compile", "fill", "export", "test-conn", "inspect-params", "inspect-query");
+            Arrays.asList("compile", "decompile", "fill", "export", "test-conn", "inspect-params", "inspect-query");
     public static final List<String> FORMATS = Arrays.asList("pdf", "jasper", "jrprint");
 
     /** Variável de ambiente alternativa a {@code --db-pass} (evita expor a senha na linha de comando). */
@@ -68,6 +68,8 @@ public class CommandHandler {
                 return testConnection();
             case "compile":
                 return compile();
+            case "decompile":
+                return decompile();
             case "fill":
                 return fill();
             case "export":
@@ -116,11 +118,28 @@ public class CommandHandler {
         Path output = resolveOutput(input, "jasper");
         JasperProcessor jp = new JasperProcessor(input);
         JasperReport report = jp.compileToFile(input, output);
-        return OutputPayload.success("compile")
+        return OutputPayload.success(OutputPayload.ACTION_COMPILE)
                 .outputFile(output.toString())
                 .executionTimeMs(elapsedMs(startNanos))
                 .meta("reportName", report.getName())
                 .meta("sourceFile", input.toString());
+    }
+
+    private OutputPayload decompile() throws CliException {
+        Path input = requireInput("jasper");
+        Path output = resolveOutput(input, "jrxml");
+        return handleDecompile(input, output);
+    }
+
+    public OutputPayload handleDecompile(Path input, Path output) throws CliException {
+        JasperProcessor jp = new JasperProcessor(input);
+        JasperReport report = jp.decompileReport(input, output);
+        return OutputPayload.success(OutputPayload.ACTION_DECOMPILE)
+                .outputFile(output.toString())
+                .executionTimeMs(elapsedMs(startNanos))
+                .meta("reportName", report.getName())
+                .meta("sourceFile", input.toString())
+                .meta("encoding", "UTF-8");
     }
 
     private OutputPayload fill() throws CliException {

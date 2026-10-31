@@ -25,6 +25,14 @@ public class OutputPayload {
     public static final String STATUS_SUCCESS = "SUCCESS";
     public static final String STATUS_ERROR = "ERROR";
 
+    public static final String ACTION_COMPILE = "compile";
+    public static final String ACTION_DECOMPILE = "decompile";
+    public static final String ACTION_FILL = "fill";
+    public static final String ACTION_EXPORT = "export";
+    public static final String ACTION_TEST_CONN = "test-conn";
+    public static final String ACTION_INSPECT_PARAMS = "inspect-params";
+    public static final String ACTION_INSPECT_QUERY = "inspect-query";
+
     private static final int MAX_CAUSES = 5;
     private static final int MAX_FRAMES_PER_CAUSE = 6;
 

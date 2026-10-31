@@ -17,15 +17,23 @@ import net.sf.jasperreports.engine.SimpleJasperReportsContext;
 import net.sf.jasperreports.engine.design.JasperDesign;
 import net.sf.jasperreports.engine.util.JRLoader;
 import net.sf.jasperreports.engine.util.JRSaver;
+import net.sf.jasperreports.engine.util.JRXmlWriteHelper;
 import net.sf.jasperreports.engine.xml.JRXmlLoader;
+import net.sf.jasperreports.engine.xml.JRXmlWriter;
 import net.sf.jasperreports.repo.FileRepositoryService;
 import net.sf.jasperreports.repo.RepositoryService;
 
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -47,8 +55,10 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -73,6 +83,37 @@ public final class JasperProcessor {
 
     public static final String SUBREPORT_DIR = "SUBREPORT_DIR";
     public static final Locale DEFAULT_LOCALE = new Locale("pt", "BR");
+
+    /**
+     * Ordem lógica canônica dos elementos filhos diretos de {@code <jasperReport>}.
+     */
+    public static final List<String> REPORT_ELEMENT_ORDER = Collections.unmodifiableList(Arrays.asList(
+            "property",
+            "propertyExpression",
+            "import",
+            "template",
+            "reportFont",
+            "style",
+            "subDataset",
+            "scriptlet",
+            "parameter",
+            "queryString",
+            "field",
+            "sortField",
+            "variable",
+            "filterExpression",
+            "group",
+            "background",
+            "title",
+            "pageHeader",
+            "columnHeader",
+            "detail",
+            "columnFooter",
+            "pageFooter",
+            "lastPageFooter",
+            "summary",
+            "noData"
+    ));
 
     private static final DateTimeFormatter[] DATE_TIME_FORMATS = {
             DateTimeFormatter.ISO_LOCAL_DATE_TIME,
@@ -132,6 +173,320 @@ public final class JasperProcessor {
         JasperReport report = compile(jrxml);
         save(report, destination, "Falha ao gravar o arquivo compilado");
         return report;
+    }
+
+    /**
+     * Descompila um arquivo {@code .jasper} para {@code .jrxml} usando {@link JRXmlWriter},
+     * preservando codificação UTF-8 (sem BOM), indentação de 2 espaços e ordem lógica de elementos.
+     */
+    public JasperReport decompileReport(Path inputPath, Path outputPath) throws CliException {
+        String ext = extension(inputPath);
+        if (!"jasper".equals(ext)) {
+            throw new CliException(ErrorType.INVALID_ARGUMENT,
+                    "A ação 'decompile' aceita apenas .jasper em --input (recebido: "
+                            + inputPath.getFileName() + ").");
+        }
+        Object obj = loadObject(inputPath, "Não foi possível ler o arquivo .jasper "
+                + "(arquivo corrompido ou compilado com versão incompatível do JasperReports)");
+        if (!(obj instanceof JasperReport)) {
+            throw new CliException(ErrorType.INVALID_ARGUMENT,
+                    "O arquivo não contém um relatório compilado: " + inputPath);
+        }
+        JasperReport jasperReport = (JasperReport) obj;
+        ensureParentDir(outputPath);
+        try {
+            String rawXml = writeReportXmlWithTwoSpaceIndent(jasperReport);
+            String formattedXml = formatDecompiledJrxml(rawXml);
+            try (OutputStream fos = Files.newOutputStream(outputPath);
+                 Writer osw = new BufferedWriter(new OutputStreamWriter(fos, StandardCharsets.UTF_8))) {
+                osw.write(formattedXml);
+                osw.flush();
+            }
+            return jasperReport;
+        } catch (IOException | RuntimeException | LinkageError e) {
+            throw CliException.wrap(e, ErrorType.IO_ERROR,
+                    "Falha ao descompilar o relatório " + inputPath.getFileName());
+        }
+    }
+
+    private String writeReportXmlWithTwoSpaceIndent(JasperReport jasperReport) {
+        JRXmlWriter xmlWriter = new JRXmlWriter(context) {
+            @Override
+            protected void useWriter(JRXmlWriteHelper writer, String version) {
+                JRXmlWriteHelper twoSpaceHelper = new JRXmlWriteHelper(writer.getUnderlyingWriter()) {
+                    @Override
+                    protected char[] getIndent(int level) {
+                        if (level <= 0) {
+                            return new char[0];
+                        }
+                        char[] indentChars = new char[level * 2];
+                        Arrays.fill(indentChars, ' ');
+                        return indentChars;
+                    }
+                };
+                super.useWriter(twoSpaceHelper, version);
+            }
+        };
+        return xmlWriter.write(jasperReport, "UTF-8");
+    }
+
+    /**
+     * Normaliza o XML gerado pelo {@link JRXmlWriter}:
+     * <ul>
+     *   <li>Remove eventual BOM UTF-8;</li>
+     *   <li>Converte eventuais tabulações de indentação fora de blocos {@code <![CDATA[...]]>} para 2 espaços;</li>
+     *   <li>Garante a ordem lógica dos elementos filhos diretos de {@code <jasperReport>}.</li>
+     * </ul>
+     */
+    static String formatDecompiledJrxml(String rawXml) {
+        if (rawXml == null || rawXml.isEmpty()) {
+            return "";
+        }
+        String xml = rawXml.startsWith("\uFEFF") ? rawXml.substring(1) : rawXml;
+        xml = normalizeIndentationOutsideCdata(xml);
+        xml = reorderReportTopLevelElements(xml);
+        if (!xml.endsWith("\n")) {
+            xml = xml + "\n";
+        }
+        return xml;
+    }
+
+    private static String normalizeIndentationOutsideCdata(String xml) {
+        StringBuilder out = new StringBuilder(xml.length());
+        int idx = 0;
+        final String cdataStart = "<![CDATA[";
+        final String cdataEnd = "]]>";
+        while (idx < xml.length()) {
+            int nextCdata = xml.indexOf(cdataStart, idx);
+            if (nextCdata < 0) {
+                appendNormalizedSegment(out, xml.substring(idx));
+                break;
+            }
+            appendNormalizedSegment(out, xml.substring(idx, nextCdata));
+            int endCdata = xml.indexOf(cdataEnd, nextCdata + cdataStart.length());
+            if (endCdata < 0) {
+                out.append(xml.substring(nextCdata));
+                break;
+            }
+            out.append(xml, nextCdata, endCdata + cdataEnd.length());
+            idx = endCdata + cdataEnd.length();
+        }
+        return out.toString();
+    }
+
+    private static void appendNormalizedSegment(StringBuilder out, String segment) {
+        String normalized = segment.replace("\r\n", "\n").replace('\r', '\n');
+        int i = 0;
+        int len = normalized.length();
+        boolean atLineStart = out.length() == 0 || out.charAt(out.length() - 1) == '\n';
+        while (i < len) {
+            char c = normalized.charAt(i);
+            if (c == '\n') {
+                out.append('\n');
+                atLineStart = true;
+                i++;
+            } else if (atLineStart && c == '\t') {
+                out.append("  ");
+                i++;
+            } else if (atLineStart && c == ' ') {
+                out.append(' ');
+                i++;
+            } else {
+                atLineStart = false;
+                out.append(c);
+                i++;
+            }
+        }
+    }
+
+    private static final class TopLevelElementBlock {
+        final String tagName;
+        final int orderKey;
+        final String rawText;
+
+        TopLevelElementBlock(String tagName, int orderKey, String rawText) {
+            this.tagName = tagName;
+            this.orderKey = orderKey;
+            this.rawText = rawText;
+        }
+    }
+
+    private static int elementOrderIndex(String tagName) {
+        String localName = tagName;
+        int colon = localName.indexOf(':');
+        if (colon >= 0) {
+            localName = localName.substring(colon + 1);
+        }
+        int idx = REPORT_ELEMENT_ORDER.indexOf(localName);
+        return idx >= 0 ? idx : REPORT_ELEMENT_ORDER.size();
+    }
+
+    private static String reorderReportTopLevelElements(String xml) {
+        int rootStart = xml.indexOf("<jasperReport");
+        if (rootStart < 0) {
+            return xml;
+        }
+        int rootOpenEnd = findTagEnd(xml, rootStart);
+        if (rootOpenEnd < 0 || (rootOpenEnd > rootStart && xml.charAt(rootOpenEnd - 1) == '/')) {
+            return xml;
+        }
+        int bodyStart = rootOpenEnd + 1;
+        if (bodyStart < xml.length() && xml.charAt(bodyStart) == '\n') {
+            bodyStart++;
+        }
+        int rootCloseStart = xml.lastIndexOf("</jasperReport>");
+        if (rootCloseStart <= bodyStart) {
+            return xml;
+        }
+
+        List<TopLevelElementBlock> blocks = new ArrayList<>();
+        int pos = bodyStart;
+        while (pos < rootCloseStart) {
+            int lineStart = pos;
+            while (pos < rootCloseStart && (xml.charAt(pos) == ' ' || xml.charAt(pos) == '\t' || xml.charAt(pos) == '\n')) {
+                if (xml.charAt(pos) == '\n') {
+                    lineStart = pos + 1;
+                }
+                pos++;
+            }
+            if (pos >= rootCloseStart) {
+                break;
+            }
+            if (xml.charAt(pos) != '<') {
+                return xml;
+            }
+            if (xml.startsWith("<!--", pos)) {
+                int commentEnd = xml.indexOf("-->", pos + 4);
+                if (commentEnd < 0) {
+                    return xml;
+                }
+                pos = commentEnd + 3;
+                if (pos < rootCloseStart && xml.charAt(pos) == '\n') {
+                    pos++;
+                }
+                continue;
+            }
+            String tagName = readTagName(xml, pos + 1);
+            if (tagName.isEmpty()) {
+                return xml;
+            }
+            int elementEnd = findMatchingElementEnd(xml, pos, rootCloseStart);
+            if (elementEnd < 0) {
+                return xml;
+            }
+            if (elementEnd < rootCloseStart && xml.charAt(elementEnd) == '\n') {
+                elementEnd++;
+            }
+            blocks.add(new TopLevelElementBlock(
+                    tagName,
+                    elementOrderIndex(tagName),
+                    xml.substring(lineStart, elementEnd)
+            ));
+            pos = elementEnd;
+        }
+
+        boolean needsReorder = false;
+        for (int i = 1; i < blocks.size(); i++) {
+            if (blocks.get(i).orderKey < blocks.get(i - 1).orderKey) {
+                needsReorder = true;
+                break;
+            }
+        }
+        if (!needsReorder) {
+            return xml;
+        }
+
+        blocks.sort(Comparator.comparingInt(b -> b.orderKey));
+        StringBuilder sb = new StringBuilder(xml.length());
+        sb.append(xml, 0, bodyStart);
+        for (TopLevelElementBlock b : blocks) {
+            sb.append(b.rawText);
+            if (!b.rawText.endsWith("\n")) {
+                sb.append('\n');
+            }
+        }
+        sb.append(xml.substring(rootCloseStart));
+        return sb.toString();
+    }
+
+    private static int findTagEnd(String xml, int tagStart) {
+        char quote = 0;
+        for (int i = tagStart; i < xml.length(); i++) {
+            char c = xml.charAt(i);
+            if (quote != 0) {
+                if (c == quote) {
+                    quote = 0;
+                }
+            } else if (c == '"' || c == '\'') {
+                quote = c;
+            } else if (c == '>') {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    private static String readTagName(String xml, int start) {
+        int i = start;
+        while (i < xml.length()) {
+            char c = xml.charAt(i);
+            if (Character.isWhitespace(c) || c == '>' || c == '/') {
+                break;
+            }
+            i++;
+        }
+        return xml.substring(start, i);
+    }
+
+    private static int findMatchingElementEnd(String xml, int start, int limit) {
+        int depth = 0;
+        int i = start;
+        while (i < limit) {
+            if (xml.startsWith("<![CDATA[", i)) {
+                int endCdata = xml.indexOf("]]>", i + 9);
+                if (endCdata < 0) {
+                    return -1;
+                }
+                i = endCdata + 3;
+                continue;
+            }
+            if (xml.startsWith("<!--", i)) {
+                int endComment = xml.indexOf("-->", i + 4);
+                if (endComment < 0) {
+                    return -1;
+                }
+                i = endComment + 3;
+                continue;
+            }
+            if (xml.charAt(i) == '<') {
+                if (i + 1 < limit && xml.charAt(i + 1) == '/') {
+                    int closeEnd = findTagEnd(xml, i);
+                    if (closeEnd < 0) {
+                        return -1;
+                    }
+                    depth--;
+                    if (depth == 0) {
+                        return closeEnd + 1;
+                    }
+                    i = closeEnd + 1;
+                    continue;
+                }
+                int tagEnd = findTagEnd(xml, i);
+                if (tagEnd < 0) {
+                    return -1;
+                }
+                boolean selfClosing = xml.charAt(tagEnd - 1) == '/';
+                if (!selfClosing) {
+                    depth++;
+                } else if (depth == 0) {
+                    return tagEnd + 1;
+                }
+                i = tagEnd + 1;
+                continue;
+            }
+            i++;
+        }
+        return -1;
     }
 
     /** Obtém um {@link JasperReport} a partir de {@code .jrxml} (compilando) ou {@code .jasper}. */

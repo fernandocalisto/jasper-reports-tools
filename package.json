@@ -37,8 +37,11 @@
     "onCommand:jasper.setActiveConnection",
     "onCommand:jasper.testConnection",
     "onCommand:jasper.compileCurrentReport",
+    "onCommand:jasper.decompileJasper",
     "onCommand:jasper.openPreview",
     "onCommand:jasper.openFieldViewer",
+    "onCommand:jasper.batchCompile",
+    "onCommand:jasper.batchExport",
     "onCommand:jasper.addServer",
     "onCommand:jasper.editServer",
     "onCommand:jasper.deleteServer",
@@ -175,6 +178,12 @@
         "icon": "$(gear)"
       },
       {
+        "command": "jasper.decompileJasper",
+        "title": "Descompilar .jasper para .jrxml",
+        "category": "Jasper",
+        "icon": "$(arrow-down)"
+      },
+      {
         "command": "jasper.openPreview",
         "title": "Abrir Preview Dividido (Split)",
         "category": "Jasper",
@@ -185,6 +194,18 @@
         "title": "Visualizar Campos da Query (Field Viewer)",
         "category": "Jasper",
         "icon": "$(table)"
+      },
+      {
+        "command": "jasper.batchCompile",
+        "title": "Compilar em Lote",
+        "category": "Jasper",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "jasper.batchExport",
+        "title": "Exportar em Lote (PDF/Jasper)",
+        "category": "Jasper",
+        "icon": "$(cloud-upload)"
       },
       {
         "command": "jasper.addServer",
@@ -309,6 +330,16 @@
           "group": "navigation"
         },
         {
+          "command": "jasper.batchCompile",
+          "when": "view == jasper-databases",
+          "group": "navigation@8"
+        },
+        {
+          "command": "jasper.batchExport",
+          "when": "view == jasper-databases",
+          "group": "navigation@8"
+        },
+        {
           "command": "jasper.searchServerResources",
           "when": "view == jasper-servers",
           "group": "navigation@1"
@@ -351,6 +382,11 @@
           "group": "navigation@1"
         },
         {
+          "command": "jasper.decompileJasper",
+          "when": "resourceExtname == .jasper",
+          "group": "navigation@1"
+        },
+        {
           "command": "jasper.openPreview",
           "when": "resourceExtname == .jrxml",
           "group": "navigation@2"
@@ -365,6 +401,11 @@
         {
           "command": "jasper.compileCurrentReport",
           "when": "resourceExtname == .jrxml",
+          "group": "1_jasper@1"
+        },
+        {
+          "command": "jasper.decompileJasper",
+          "when": "resourceExtname == .jasper",
           "group": "1_jasper@1"
         },
         {
@@ -399,6 +440,11 @@
           "group": "1_jasper@1"
         },
         {
+          "command": "jasper.decompileJasper",
+          "when": "resourceExtname == .jasper",
+          "group": "1_jasper@1"
+        },
+        {
           "command": "jasper.openPreview",
           "when": "resourceExtname == .jrxml",
           "group": "1_jasper@2"
@@ -419,8 +465,28 @@
           "group": "1_jasper@5"
         },
         {
-          "command": "jasper.pasteServerResource",
+          "command": "jasper.batchCompile",
+          "when": "resourceExtname == .jrxml",
           "group": "1_jasper@6"
+        },
+        {
+          "command": "jasper.batchExport",
+          "when": "resourceExtname == .jrxml",
+          "group": "1_jasper@6"
+        },
+        {
+          "command": "jasper.batchCompile",
+          "when": "explorerResourceIsFolder || viewItem == folder",
+          "group": "1_jasper@6"
+        },
+        {
+          "command": "jasper.batchExport",
+          "when": "explorerResourceIsFolder || viewItem == folder",
+          "group": "1_jasper@6"
+        },
+        {
+          "command": "jasper.pasteServerResource",
+          "group": "1_jasper@7"
         }
       ],
       "view/item/context": [
@@ -584,6 +650,12 @@
         "when": "editorTextFocus && resourceExtname == .jrxml"
       },
       {
+        "command": "jasper.decompileJasper",
+        "key": "ctrl+shift+d",
+        "mac": "cmd+shift+d",
+        "when": "resourceExtname == .jasper"
+      },
+      {
         "command": "jasper.openPreview",
         "key": "ctrl+shift+v",
         "mac": "cmd+shift+v",
@@ -594,6 +666,18 @@
         "key": "ctrl+shift+f",
         "mac": "cmd+shift+f",
         "when": "editorTextFocus && resourceExtname == .jrxml"
+      },
+      {
+        "command": "jasper.batchCompile",
+        "key": "ctrl+shift+alt+b",
+        "mac": "cmd+shift+alt+b",
+        "when": "explorerViewletFocus"
+      },
+      {
+        "command": "jasper.batchExport",
+        "key": "ctrl+shift+alt+e",
+        "mac": "cmd+shift+alt+e",
+        "when": "explorerViewletFocus"
       },
       {
         "command": "jasper.searchServerResources",

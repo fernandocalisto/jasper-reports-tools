@@ -42,6 +42,7 @@ import java.util.concurrent.Callable;
         footer = {
                 "Ações:",
                 "  compile         Compila --input (.jrxml) gerando o .jasper.",
+                "  decompile       Descompila --input (.jasper) reconstruindo o .jrxml em UTF-8.",
                 "  fill            Preenche --input (.jrxml/.jasper) e grava o .jrprint.",
                 "  export          Compila (se .jrxml), preenche e exporta para --format (pdf|jrprint).",
                 "                  Também aceita um .jrprint como --input.",
@@ -56,6 +57,7 @@ import java.util.concurrent.Callable;
                 "",
                 "Exemplos:",
                 "  java -jar jasper-cli.jar --action compile --input relatorio.jrxml",
+                "  java -jar jasper-cli.jar --action decompile --input relatorio.jasper --output relatorio.jrxml",
                 "  java -jar jasper-cli.jar --action export --input relatorio.jrxml --output saida.pdf \\",
                 "       --db-url jdbc:postgresql://localhost:5432/hospital --db-user app --db-pass segredo \\",
                 "       --params \"{\\\"CD_ATENDIMENTO\\\": 1050}\"",
@@ -68,7 +70,7 @@ import java.util.concurrent.Callable;
 public class Main implements Callable<Integer> {
 
     @Option(names = "--action", required = true, paramLabel = "<action>", order = 1,
-            description = "Obrigatório. compile | fill | export | test-conn | inspect-params | inspect-query")
+            description = "Obrigatório. compile | decompile | fill | export | test-conn | inspect-params | inspect-query")
     private String action;
 
     @Option(names = "--format", defaultValue = "pdf", paramLabel = "<format>", order = 2,

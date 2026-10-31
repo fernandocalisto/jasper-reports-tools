@@ -88,6 +88,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     runnerService,
     outputChannel
   );
+  // Registra comandos de relatório (compileCurrentReport, decompileJasper, openPreview, openFieldViewer, batchCompile, batchExport)
   const reportDisposables = registerReportCommands(
     context,
     connectionManager,

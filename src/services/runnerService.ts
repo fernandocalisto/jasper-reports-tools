@@ -3,8 +3,22 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFile } from 'child_process';
 import { buildJdbcUrl, DatabaseProfile } from '../models/database';
+import {
+  BatchFormat,
+  BatchItemResult,
+  BatchOptions,
+  BatchProcessor,
+  BatchResult
+} from './batchProcessor';
 
-export { buildJdbcUrl };
+export {
+  buildJdbcUrl,
+  BatchFormat,
+  BatchItemResult,
+  BatchOptions,
+  BatchProcessor,
+  BatchResult
+};
 
 export interface InspectQueryColumn {
   name: string;
@@ -372,6 +386,20 @@ export class RunnerService {
   }
 
   /**
+   * Descompila um arquivo `.jasper` reconstruindo o `.jrxml` correspondente.
+   */
+  public async decompileReport(
+    jasperPath: string,
+    outputPath?: string
+  ): Promise<CliSuccessResponse> {
+    const args: string[] = ['--action', 'decompile', '--input', jasperPath];
+    if (outputPath) {
+      args.push('--output', outputPath);
+    }
+    return this.executeCli(args, undefined, path.dirname(jasperPath));
+  }
+
+  /**
    * Preenche o relatório (compilando em memória se for `.jrxml`) e exporta para PDF ou `.jrprint`.
    */
   public async fillAndExport(options: FillExportOptions): Promise<CliSuccessResponse> {
@@ -465,6 +493,48 @@ export class RunnerService {
     }
 
     return this.executeCli(args, options.password, path.dirname(options.reportPath));
+  }
+
+  /**
+   * Compila múltiplos arquivos `.jrxml` em lote (`.jrxml` → `.jasper`) com paralelismo configurável.
+   */
+  public async batchCompile(options: BatchOptions): Promise<BatchResult> {
+    const processor = this.createBatchProcessor();
+    return processor.batchCompile(options);
+  }
+
+  /**
+   * Exporta múltiplos arquivos `.jrxml` em lote (`.jrxml` → `.pdf` / `.jasper` / `.jrprint`) com paralelismo configurável.
+   */
+  public async batchExport(options: BatchOptions): Promise<BatchResult> {
+    const processor = this.createBatchProcessor();
+    return processor.batchExport(options);
+  }
+
+  private createBatchProcessor(): BatchProcessor {
+    return new BatchProcessor({
+      compileSingle: async (inputPath, outputPath) => {
+        const res = await this.compileReport(inputPath, outputPath);
+        return {
+          outputFile: res.outputFile,
+          executionTimeMs: res.executionTimeMs
+        };
+      },
+      exportSingle: async (exportOpts) => {
+        const res = await this.fillAndExport({
+          jrxmlPath: exportOpts.inputPath,
+          outputPath: exportOpts.outputPath,
+          format: exportOpts.format,
+          dbProfile: exportOpts.dbProfile,
+          password: exportOpts.password,
+          params: exportOpts.params
+        });
+        return {
+          outputFile: res.outputFile,
+          executionTimeMs: res.executionTimeMs
+        };
+      }
+    });
   }
 
   /**

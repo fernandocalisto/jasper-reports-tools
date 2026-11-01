@@ -6,7 +6,7 @@ Lightweight, professional **Visual Studio Code** extension for creating, maintai
 
 ## 🇧🇷 Versão em Português
 
-**Ferramenta leve e profissional para o Visual Studio Code voltada à criação, manutenção, compilação, visualização (Split Preview PDF), inspeção de campos SQL e deploy de relatórios JasperReports (`.jrxml` e `.jasper`) — projetada para substituir o Jaspersoft Studio em ambientes corporativos e hospitalares com zero serviços em background (*Zero-Daemon*).**
+**Ferramenta leve e profissional para o Visual Studio Code voltada à criação, manutenção, compilação, visualização (Split Preview PDF), inspeção de campos SQL, agendamento no JasperServer, diff de relatórios, validação de parâmetros, editor de expressões Monaco e deploy de relatórios JasperReports (`.jrxml` e `.jasper`) — projetada para substituir o Jaspersoft Studio em ambientes corporativos e hospitalares com zero serviços em background (*Zero-Daemon*).**
 
 ---
 
@@ -24,8 +24,13 @@ Lightweight, professional **Visual Studio Code** extension for creating, maintai
 - On-demand Java execution — no daemon, no open ports, no RAM waste
 - Real PDF preview with live parameters + live reload on save
 - Secure credential storage (OS keyring, never plaintext)
-- JasperServer integration via REST API v2 (browse, download, deploy, create)
+- JasperServer integration via REST API v2 (browse, download, deploy, create, schedule)
 - Smart autocomplete for `$F{}`, `$P{}`, `$V{}` + Java/Groovy methods
+- **Monaco Expression Editor** with real-time validation & preview
+- **Report Diff** semantic comparison (XML/SQL/Expressions)
+- **Parameter Validation** inline + side panel
+- **Batch Operations** parallel compile/export
+- **JasperServer Scheduler** full CRUD jobs/triggers/executions
 
 ---
 
@@ -40,10 +45,10 @@ Lightweight, professional **Visual Studio Code** extension for creating, maintai
 
 ```bash
 # Via VS Code UI
-# Extensions → ... → Install from VSIX... → jasper-reports-tools-0.1.0.vsix
+# Extensions → ... → Install from VSIX... → jasper-reports-tools-0.2.0.vsix
 
 # Or CLI
-code --install-extension jasper-reports-tools-0.1.0.vsix
+code --install-extension jasper-reports-tools-0.2.0.vsix
 ```
 
 ---
@@ -54,7 +59,8 @@ code --install-extension jasper-reports-tools-0.1.0.vsix
 2. **Database Connections** → `+` → choose **PostgreSQL**, **Oracle** (built-in drivers) or **Custom JAR** (SQL Server, MySQL, Firebird, DB2...)
 3. Click **Test Connection** → **Save**
 4. Set as active via check icon or Status Bar item `Jasper: <Connection>`
-5. *(Optional)* **JasperServer Explorer** → `+` → add server URL/org/user/pass → browse/deploy
+5. *(Optional)* **JasperServer Explorer** → `+` → add server URL/org/user/pass → browse/deploy/schedule
+6. *(Optional)* **Schedules** → expand JasperServer connection → **Agendamentos** → create jobs/triggers
 
 ---
 
@@ -64,10 +70,17 @@ code --install-extension jasper-reports-tools-0.1.0.vsix
 |---------|-------------------------|
 | **Smart `.jrxml` Editing** | Official XSD 6.21.x validation, snippets (`jtf`, `jband`, `jparam`...), language config |
 | **Completion Provider** | `$F{` → fields, `$P{` → parameters, `$V{` → variables; `.` after field → Java methods by inferred type (`String`, `BigDecimal`, `Date`, `Integer`...); static members (`Boolean.valueOf`, `DateUtils.addDays`, `JRExtendedUtils.formatCurrency`...) |
+| **Expression Editor (Monaco)** | `Ctrl+Shift+E` — modal editor with autocomplete, real-time validation (syntax, refs, types), type inference, mock preview, snippets, CodeLens in XML, Hover tooltips, 20-expression history |
 | **Split Preview (PDF.js)** | `Ctrl+Shift+V` — side panel with live parameter form, real JasperReports rendering, **Live Reload** on `Ctrl+S` |
 | **Field Viewer** | `Ctrl+Shift+F` — lists all `<field>` with Java Class + JDBC Type + Nullable; click copies `$F{FIELD}`; **Refresh from DB** runs `--action inspect-query` (no data scan) |
 | **One-Click Compile** | `Ctrl+Shift+B` → `.jrxml` → `.jasper` (auto `SUBREPORT_DIR`, `REPORT_LOCALE=pt_BR`) |
+| **Decompile** | `Ctrl+Shift+D` → `.jasper` → `.jrxml` (2-space indent, logical order, CDATA preserved) |
+| **Report Diff** | `Ctrl+Shift+Alt+C` — side-by-side semantic diff (XML/SQL/Expressions), 9 categories, F7 nav, filters, export HTML |
+| **Parameter Validation** | Auto-validate (required, type, date format, range, regex, enum, conditional); inline UI + side panel; Field Viewer integration |
+| **Batch Operations** | `Ctrl+Shift+Alt+B` (Batch Compile), `Ctrl+Shift+Alt+E` (Batch Export) — folder/multi-select, parallel, progress, JSON report |
 | **JasperServer Explorer** | Browse folders/reports, download `.jrxml`, update remote, **deploy compiled `.jasper`**, **create new `.jrxml`** |
+| **JasperServer Scheduler** | `Ctrl+Shift+Alt+S` — CRUD Jobs/Triggers/Executions; Simple/Cron/Calendar triggers; Cron validation + next-runs preview; execution history with download |
+| **JasperServer UX** | `Ctrl+F` search, `Ctrl+C/V` copy/paste (recursive download), breadcrumbs, `Backspace` nav up, `F5` reload, multi-select, `Ctrl+Shift+C` copy path |
 | **Zero-Daemon** | No background process; `bin/jasper-cli.jar` runs on-demand and exits |
 | **Secure Secrets** | Passwords only in OS keyring via `vscode.SecretStorage` (Windows Credential Manager / macOS Keychain / Linux Secret Service) |
 
@@ -93,11 +106,30 @@ code --install-extension jasper-reports-tools-0.1.0.vsix
 
 ## Keyboard Shortcuts
 
-| Action | Windows / Linux | macOS |
-|--------|-----------------|-------|
-| Compile Report | `Ctrl+Shift+B` | `Cmd+Shift+B` |
-| Open Split Preview | `Ctrl+Shift+V` | `Cmd+Shift+V` |
-| Open Field Viewer | `Ctrl+Shift+F` | `Cmd+Shift+F` |
+| Action | Windows / Linux | macOS | When |
+|--------|-----------------|-------|------|
+| Compile Report | `Ctrl+Shift+B` | `Cmd+Shift+B` | `.jrxml` editor |
+| Open Split Preview | `Ctrl+Shift+V` | `Cmd+Shift+V` | `.jrxml` editor |
+| Open Field Viewer | `Ctrl+Shift+F` | `Cmd+Shift+F` | `.jrxml` editor |
+| Open Expression Editor | `Ctrl+Shift+E` | `Cmd+Shift+E` | `.jrxml` editor |
+| Decompile Report | `Ctrl+Shift+D` | `Cmd+Shift+D` | `.jasper` file |
+| Compare Reports | `Ctrl+Shift+Alt+C` | `Cmd+Shift+Alt+C` | Explorer multi-select |
+| Batch Compile | `Ctrl+Shift+Alt+B` | `Cmd+Shift+Alt+B` | Explorer |
+| Batch Export | `Ctrl+Shift+Alt+E` | `Cmd+Shift+Alt+E` | Explorer |
+| Open Scheduler | `Ctrl+Shift+Alt+S` | `Cmd+Shift+Alt+S` | JasperServer connected |
+| Refresh Schedules | `F5` | `F5` | Schedules view |
+| New Schedule Job | `Ctrl+N` | `Cmd+N` | Schedules view |
+| Run Job Now | `Enter` | `Enter` | Job selected |
+| Delete Job/Trigger | `Delete` | `Delete` | Job/Trigger selected |
+| Search Schedules | `Ctrl+F` | `Cmd+F` | Schedules view |
+| Copy Schedule Job | `Ctrl+C` | `Cmd+C` | Job selected |
+| Paste Schedule Job | `Ctrl+V` | `Cmd+V` | Schedules root |
+| Server Search | `Ctrl+F` | `Cmd+F` | Server Explorer |
+| Server Copy | `Ctrl+C` | `Cmd+C` | Server item |
+| Server Paste | `Ctrl+V` | `Cmd+V` | Server folder |
+| Server Reload | `F5` | `F5` | Server Explorer |
+| Server Nav Up | `Backspace` | `Delete` | Server Explorer |
+| Server Copy Path | `Ctrl+Shift+C` | `Cmd+Shift+C` | Server item |
 
 ---
 
@@ -107,6 +139,7 @@ code --install-extension jasper-reports-tools-0.1.0.vsix
 - **Zero-Daemon**: No resident process. `bin/jasper-cli.jar` (fat JAR ~45MB with JasperReports 6.21.3, PostgreSQL, Oracle, Picocli, Jackson) runs on-demand via `child_process.execFile`, exits immediately.
 - **Drivers**: PostgreSQL & Oracle bundled. Custom driver via JAR path + class name (loaded via `URLClassLoader` isolation).
 - **JasperServer**: Pure REST API v2 (Node.js `fetch`), no Java involved.
+- **Scheduler**: Full Quartz-compatible Cron expressions validated client-side with next-5-runs preview.
 
 ---
 
@@ -117,6 +150,7 @@ code --install-extension jasper-reports-tools-0.1.0.vsix
 | `Java not found` | Install JDK 11+ (Adoptium/OpenJDK), ensure `java -version` works or set `JAVA_HOME` |
 | `Driver not found` | Use **Custom JAR** driver type, point to vendor `.jar` (mssql, mysql, firebird...) |
 | PDF won't render / compile error | Open **Output** → **JasperReports** channel for full stack trace |
+| Cron invalid | Use Quartz syntax (e.g., `0 0 6 ? * MON-FRI *`); preview shows next 5 runs |
 
 ---
 

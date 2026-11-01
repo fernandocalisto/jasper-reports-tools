@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'none'; style-src {{cspSource}} 'unsafe-inline'; script-src 'nonce-{{nonce}}' {{cspSource}}; worker-src {{cspSource}} blob:;"
+  >
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jasper Expression Editor</title>
+  <link rel="stylesheet" href="{{styleUri}}">
+</head>
+<body data-worker-uri="{{workerUri}}">
+  <div class="expr-app">
+    <!-- Top Header -->
+    <header class="expr-header">
+      <div class="header-left">
+        <div class="title-row">
+          <span class="header-icon">&#9998;</span>
+          <h1 id="editorTitle">Expression Editor</h1>
+          <span class="tag-badge" id="activeTagBadge">&lt;textFieldExpression&gt;</span>
+          <span class="line-badge" id="activeLineBadge">L1</span>
+          <span class="file-badge" id="activeFileName">relatorio.jrxml</span>
+        </div>
+
+        <div class="context-row">
+          <label for="selExpressionSwitch" class="small-label">Expressão no Relatório:</label>
+          <select id="selExpressionSwitch" class="select-control" title="Alternar entre as expressões do relatório atual">
+          </select>
+
+          <label for="selLanguage" class="small-label">Linguagem:</label>
+          <select id="selLanguage" class="select-control select-lang" title="Linguagem da expressão (Groovy ou Java)">
+            <option value="groovy">Groovy</option>
+            <option value="java">Java</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <button type="button" id="btnRevealXml" class="btn btn-secondary" title="Posicionar cursor na linha correspondente do XML">
+          Ver no XML
+        </button>
+        <button type="button" id="btnSaveExpression" class="btn btn-secondary" title="Salvar expressão no XML original (Ctrl+S)">
+          Salvar <kbd>Ctrl+S</kbd>
+        </button>
+        <button type="button" id="btnSaveAndClose" class="btn btn-primary" title="Salvar expressão no XML e fechar editor (Ctrl+Enter)">
+          Salvar e Fechar <kbd>Ctrl+Enter</kbd>
+        </button>
+      </div>
+    </header>
+
+    <!-- Snippets & Quick Tools Bar -->
+    <div class="snippets-toolbar">
+      <div class="toolbar-group">
+        <span class="group-label">Snippets:</span>
+        <button type="button" class="chip-btn snippet-btn" data-snippet="if" title="$F{CAMPO} != null ? $F{CAMPO} : &quot;&quot;">
+          <code>if</code> Null-Check
+        </button>
+        <button type="button" class="chip-btn snippet-btn" data-snippet="fmt" title="new java.text.SimpleDateFormat(&quot;dd/MM/yyyy&quot;).format($F{DATA})">
+          <code>fmt</code> Data BR
+        </button>
+        <button type="button" class="chip-btn snippet-btn" data-snippet="money" title="new java.text.DecimalFormat(&quot;#,##0.00&quot;).format($F{VALOR})">
+          <code>money</code> Moeda
+        </button>
+        <button type="button" class="chip-btn snippet-btn" data-snippet="nullsafe" title="$F{CAMPO}?.toString() ?: &quot;&quot;">
+          <code>nullsafe</code> Safe ?.
+        </button>
+        <button type="button" class="chip-btn snippet-btn" data-snippet="cond" title="$F{COND} ? &quot;SIM&quot; : &quot;NÃO&quot;">
+          <code>cond</code> SIM/NÃO
+        </button>
+      </div>
+
+      <div class="toolbar-divider"></div>
+
+      <div class="toolbar-group">
+        <span class="group-label">Groovy:</span>
+        <button type="button" class="chip-btn op-btn" data-insert="?." title="Safe Navigation Operator (?.)">?.</button>
+        <button type="button" class="chip-btn op-btn" data-insert=" ?: " title="Elvis Operator (?:)">?:</button>
+        <button type="button" class="chip-btn op-btn" data-insert="*." title="Spread-Dot Operator (*.)">*.</button>
+        <button type="button" class="chip-btn op-btn" data-insert=" <=> " title="Spaceship Operator (<=>)">&lt;=&gt;</button>
+      </div>
+
+      <div class="toolbar-divider"></div>
+
+      <div class="toolbar-group">
+        <label for="selCommonFunctions" class="group-label">Funções:</label>
+        <select id="selCommonFunctions" class="select-control">
+          <option value="">+ Inserir função / utilitário...</option>
+        </select>
+        <button type="button" id="btnTriggerSuggest" class="chip-btn" title="Abrir sugestões de Autocomplete Contextual (Ctrl+Space)">
+          Autocomplete <kbd>Ctrl+Space</kbd>
+        </button>
+      </div>
+    </div>
+
+    <!-- Toast / Feedback Banner -->
+    <div id="feedbackBanner" class="feedback-banner hidden" role="status">
+      <span id="feedbackBannerText"></span>
+    </div>
+
+    <!-- Main Workspace: Editor + Bottom Validation/Preview + Right Sidebar ($F, $P, $V) -->
+    <main class="expr-workspace">
+      <section class="editor-and-bottom">
+        <!-- Monaco Editor Surface -->
+        <div class="editor-card">
+          <div id="monacoContainer" class="monaco-container"></div>
+          <div class="editor-statusbar">
+            <div class="status-left">
+              <span id="cursorStatus">Ln 1, Col 1</span>
+              <span class="status-sep">•</span>
+              <span id="validationSummaryBadge" class="status-valid">&#10003; Expressão válida</span>
+            </div>
+            <div class="status-right">
+              <span>Tipo Inferido: <strong id="inferredTypeBadge">java.lang.Object</strong></span>
+              <span class="status-sep">•</span>
+              <span>Esperado: <strong id="expectedTypeBadge">java.lang.Object</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom Split: Real-time Validation + Live Preview with Mock Data -->
+        <div class="bottom-panels">
+          <!-- Real-Time Validation Panel -->
+          <div class="panel-box validation-box">
+            <div class="panel-box-header">
+              <h2>Validação em Tempo Real</h2>
+              <span class="count-pill" id="diagCountPill">0 problemas</span>
+            </div>
+            <div id="diagnosticsList" class="diagnostics-list">
+              <div class="empty-ok">&#10003; Nenhum erro de sintaxe, referência ou tipo encontrado.</div>
+            </div>
+          </div>
+
+          <!-- Live Preview & Mock Data Panel -->
+          <div class="panel-box preview-box">
+            <div class="panel-box-header">
+              <h2>Preview de Resultado (Dados Mock)</h2>
+              <div class="preview-header-actions">
+                <span class="exec-time" id="previewTimeBadge">0ms</span>
+                <button type="button" id="btnRegenerateMock" class="btn-link" title="Gerar novos valores sintéticos para os campos">
+                  &#8635; Resetar Mock
+                </button>
+              </div>
+            </div>
+
+            <!-- Result Output Card -->
+            <div id="previewResultCard" class="preview-result-card">
+              <div class="preview-value-row">
+                <span class="preview-label">Resultado:</span>
+                <code id="previewFormattedValue" class="preview-value">"Maria da Silva"</code>
+                <span id="previewResultTypeBadge" class="type-pill">String</span>
+              </div>
+              <div id="previewErrorBox" class="preview-error-box hidden">
+                <div class="err-type" id="previewErrorType"></div>
+                <div class="err-msg" id="previewErrorMessage"></div>
+                <div class="err-detail" id="previewErrorDetail"></div>
+              </div>
+            </div>
+
+            <!-- Editable Mock Values Table -->
+            <div class="mock-table-wrapper">
+              <div class="mock-table-title">Dados Sintéticos (edite para testar cenários ou <code>null</code>):</div>
+              <div id="mockInputsContainer" class="mock-inputs-list"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Sidebar: Report Metadata ($F{}, $P{}, $V{}) -->
+      <aside class="metadata-sidebar">
+        <div class="sidebar-header">
+          <h2>Elementos do Relatório</h2>
+          <input
+            type="text"
+            id="sidebarSearchInput"
+            class="search-input"
+            placeholder="Buscar $F{}, $P{}, $V{}..."
+            autocomplete="off"
+          >
+          <div class="sidebar-tabs" role="tablist">
+            <button type="button" class="tab-btn active" data-tab="all">Todos</button>
+            <button type="button" class="tab-btn" data-tab="F">$F Campos</button>
+            <button type="button" class="tab-btn" data-tab="P">$P Parâm.</button>
+            <button type="button" class="tab-btn" data-tab="V">$V Variáv.</button>
+          </div>
+        </div>
+
+        <div id="metadataItemsList" class="metadata-items-list"></div>
+      </aside>
+    </main>
+  </div>
+
+  <script nonce="{{nonce}}" src="{{monacoUri}}"></script>
+  <script nonce="{{nonce}}" src="{{scriptUri}}"></script>
+</body>
+</html>

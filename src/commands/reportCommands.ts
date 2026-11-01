@@ -21,6 +21,7 @@ import { DiffOptions } from '../services/reportDiffEngine';
 import { PreviewPanel } from '../webviewPanels/previewPanel';
 import { FieldViewerPanel } from '../webviewPanels/fieldViewerPanel';
 import { DiffSessionInput, DiffViewerPanel } from '../webviewPanels/diffViewerPanel';
+import { ExpressionEditorPanel } from '../webviewPanels/expressionEditorPanel';
 
 export interface BatchCommandInvocationOptions {
   inputPaths?: string[];
@@ -430,6 +431,30 @@ export function registerReportCommands(
     }
   );
 
+  const openExpressionEditorCmd = vscode.commands.registerCommand(
+    'jasper.openExpressionEditor',
+    async (
+      uriOrString?: vscode.Uri | string,
+      expressionId?: string,
+      lineZeroBased?: number
+    ) => {
+      let documentUri: vscode.Uri | undefined;
+      if (isVscodeUri(uriOrString)) {
+        documentUri = uriOrString;
+      } else if (typeof uriOrString === 'string' && uriOrString.trim().length > 0) {
+        documentUri = uriOrString.startsWith('file:')
+          ? vscode.Uri.parse(uriOrString)
+          : vscode.Uri.file(uriOrString);
+      }
+
+      return ExpressionEditorPanel.createOrShow(context, jrxmlParser, outputChannel, {
+        documentUri,
+        expressionId: typeof expressionId === 'string' ? expressionId : undefined,
+        lineZeroBased: typeof lineZeroBased === 'number' ? lineZeroBased : undefined
+      });
+    }
+  );
+
   return [
     compileCurrentReportCmd,
     decompileJasperCmd,
@@ -439,7 +464,8 @@ export function registerReportCommands(
     batchExportCmd,
     compareReportsCmd,
     compareWithServerCmd,
-    openDiffViewerCmd
+    openDiffViewerCmd,
+    openExpressionEditorCmd
   ];
 }
 

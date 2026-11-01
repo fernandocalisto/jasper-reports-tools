@@ -81,7 +81,9 @@
     "onCommand:jasper.cancelExecution",
     "onCommand:jasper.searchSchedules",
     "onCommand:jasper.copyScheduleJob",
-    "onCommand:jasper.pasteScheduleJob"
+    "onCommand:jasper.pasteScheduleJob",
+    "onCommand:jasper.openExpressionEditor",
+    "onCustomEditor:jasperExpressionEditor"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -113,6 +115,18 @@
           "light": "./media/icons/file-jasper.svg",
           "dark": "./media/icons/file-jasper.svg"
         }
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "jasperExpressionEditor",
+        "displayName": "Jasper Expression Editor",
+        "selector": [
+          {
+            "filenamePattern": "*.jrexpr"
+          }
+        ],
+        "priority": "default"
       }
     ],
     "snippets": [
@@ -220,6 +234,12 @@
         "title": "Visualizar Campos da Query (Field Viewer)",
         "category": "Jasper",
         "icon": "$(table)"
+      },
+      {
+        "command": "jasper.openExpressionEditor",
+        "title": "Editar Expressão (Expression Editor)",
+        "category": "Jasper",
+        "icon": "$(edit)"
       },
       {
         "command": "jasper.batchCompile",
@@ -558,6 +578,11 @@
           "group": "navigation@3"
         },
         {
+          "command": "jasper.openExpressionEditor",
+          "when": "resourceExtname == .jrxml",
+          "group": "navigation@4"
+        },
+        {
           "command": "jasper.compareReports",
           "when": "resourceExtname == .jrxml || resourceExtname == .jasper",
           "group": "1_jasper@8"
@@ -583,6 +608,11 @@
           "command": "jasper.openFieldViewer",
           "when": "resourceExtname == .jrxml",
           "group": "1_jasper@3"
+        },
+        {
+          "command": "jasper.openExpressionEditor",
+          "when": "resourceExtname == .jrxml",
+          "group": "1_jasper@3_expr"
         },
         {
           "command": "jasper.deployJasperToServer",
@@ -944,6 +974,12 @@
         "when": "editorTextFocus && resourceExtname == .jrxml"
       },
       {
+        "command": "jasper.openExpressionEditor",
+        "key": "ctrl+shift+e",
+        "mac": "cmd+shift+e",
+        "when": "editorTextFocus && resourceExtname == .jrxml"
+      },
+      {
         "command": "jasper.batchCompile",
         "key": "ctrl+shift+alt+b",
         "mac": "cmd+shift+alt+b",
@@ -1080,6 +1116,25 @@
           "type": "boolean",
           "default": false,
           "description": "Exibe avisos de validação (como range numérico e regex) como erros que bloqueiam a execução."
+        },
+        "jasper.expressionEditor.defaultLanguage": {
+          "type": "string",
+          "enum": [
+            "groovy",
+            "java"
+          ],
+          "default": "groovy",
+          "description": "Linguagem padrão para análise e highlight no Expression Editor quando omitida no .jrxml."
+        },
+        "jasper.expressionEditor.enableCodeLens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Exibe CodeLens 'Editar Expressão' e resumo de preview acima de tags de expressão no XML (.jrxml)."
+        },
+        "jasper.expressionEditor.enableInlineValidation": {
+          "type": "boolean",
+          "default": true,
+          "description": "Valida expressões JasperReports em tempo real no editor XML destacando referências quebradas e erros de sintaxe."
         }
       }
     }

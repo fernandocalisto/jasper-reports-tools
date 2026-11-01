@@ -6,7 +6,17 @@ import { JasperServerSchedulerService } from './services/jasperServerScheduler';
 import { RunnerService } from './services/runnerService';
 import { jrxmlParser } from './services/jrxmlParser';
 import { parameterValidator } from './services/parameterValidator';
-import { JasperCompletionProvider, PROVIDER_SELECTOR } from './services/completionProvider';
+import { PROVIDER_SELECTOR } from './services/completionProvider';
+import {
+  EXPRESSION_PROVIDER_SELECTOR,
+  ExpressionCompletionProvider
+} from './services/expressionCompletionProvider';
+import {
+  ExpressionCodeActionProvider,
+  ExpressionCodeLensProvider,
+  ExpressionDiagnosticsManager,
+  ExpressionHoverProvider
+} from './services/expressionHoverProvider';
 import { DatabaseTreeProvider } from './providers/databaseTreeProvider';
 import { ServerTreeProvider } from './providers/serverTreeProvider';
 import { SchedulerTreeProvider } from './providers/schedulerTreeProvider';
@@ -21,6 +31,10 @@ import { ServerFormPanel } from './webviewPanels/serverFormPanel';
 import { DiffViewerPanel } from './webviewPanels/diffViewerPanel';
 import { SchedulerJobEditorPanel } from './webviewPanels/schedulerJobEditorPanel';
 import { SchedulerHistoryPanel } from './webviewPanels/schedulerHistoryPanel';
+import {
+  ExpressionEditorPanel,
+  JasperExpressionCustomEditorProvider
+} from './webviewPanels/expressionEditorPanel';
 
 let statusBarItem: vscode.StatusBarItem | undefined;
 let outputChannel: vscode.OutputChannel | undefined;
@@ -135,13 +149,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     schedulerTreeProvider
   );
 
+  const expressionCompletionProvider = new ExpressionCompletionProvider(jrxmlParser);
   const completionDisposable = vscode.languages.registerCompletionItemProvider(
-    PROVIDER_SELECTOR,
-    new JasperCompletionProvider(jrxmlParser),
+    EXPRESSION_PROVIDER_SELECTOR,
+    expressionCompletionProvider,
     '$',
     '{',
     '.',
-    '('
+    '(',
+    '?',
+    ':'
+  );
+
+  const hoverDisposable = vscode.languages.registerHoverProvider(
+    EXPRESSION_PROVIDER_SELECTOR,
+    new ExpressionHoverProvider(jrxmlParser)
+  );
+
+  const expressionCodeLensProvider = new ExpressionCodeLensProvider(jrxmlParser);
+  const codeLensDisposable = vscode.languages.registerCodeLensProvider(
+    PROVIDER_SELECTOR,
+    expressionCodeLensProvider
+  );
+
+  const codeActionDisposable = vscode.languages.registerCodeActionsProvider(
+    PROVIDER_SELECTOR,
+    new ExpressionCodeActionProvider(jrxmlParser),
+    {
+      providedCodeActionKinds: ExpressionCodeActionProvider.providedCodeActionKinds
+    }
+  );
+
+  const expressionDiagnosticsManager = new ExpressionDiagnosticsManager(jrxmlParser);
+
+  const customExpressionEditorDisposable = vscode.window.registerCustomEditorProvider(
+    JasperExpressionCustomEditorProvider.viewType,
+    new JasperExpressionCustomEditorProvider(context, jrxmlParser, outputChannel),
+    {
+      webviewOptions: { retainContextWhenHidden: true }
+    }
   );
 
   const saveDocumentListener = vscode.workspace.onDidSaveTextDocument((document) => {
@@ -150,6 +196,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       PreviewPanel.handleDidSaveTextDocument(document);
       FieldViewerPanel.handleDidSaveTextDocument(document);
       DiffViewerPanel.handleDidSaveTextDocument(document);
+      ExpressionEditorPanel.handleDidSaveTextDocument(document);
+      expressionCodeLensProvider.refresh();
+      expressionDiagnosticsManager.validateDocument(document);
     }
   });
 
@@ -157,6 +206,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (event.affectsConfiguration('jasper.validation')) {
       PreviewPanel.handleConfigurationChanged();
       FieldViewerPanel.handleConfigurationChanged();
+    }
+    if (event.affectsConfiguration('jasper.expressionEditor')) {
+      expressionCodeLensProvider.refresh();
+      for (const doc of vscode.workspace.textDocuments) {
+        if (doc.fileName.toLowerCase().endsWith('.jrxml')) {
+          expressionDiagnosticsManager.validateDocument(doc);
+        }
+      }
     }
   });
 
@@ -177,6 +234,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusBarItem,
     connectionListener,
     completionDisposable,
+    hoverDisposable,
+    codeLensDisposable,
+    codeActionDisposable,
+    expressionDiagnosticsManager,
+    customExpressionEditorDisposable,
     saveDocumentListener,
     configChangeListener,
     ...connectionDisposables,
@@ -203,6 +265,9 @@ export function deactivate(): void {
   }
   if (SchedulerHistoryPanel.currentPanel) {
     SchedulerHistoryPanel.currentPanel.dispose();
+  }
+  if (ExpressionEditorPanel.currentPanel) {
+    ExpressionEditorPanel.currentPanel.dispose();
   }
   if (statusBarItem) {
     statusBarItem.dispose();

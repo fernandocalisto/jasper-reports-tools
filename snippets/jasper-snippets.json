@@ -135,5 +135,40 @@
       "\t<variableExpression><![CDATA[${4:\\$F{VL_TOTAL\\}}]]></variableExpression>",
       "</variable>$0"
     ]
+  },
+  "Jasper Expression: If Null-Check": {
+    "prefix": "if",
+    "description": "Expressão condicional ternária null-safe: $F{CAMPO} != null ? $F{CAMPO} : \"\"",
+    "body": [
+      "\\$F{${1:CAMPO}} != null ? \\$F{${1:CAMPO}} : \"${2:}\"$0"
+    ]
+  },
+  "Jasper Expression: Format Date (SimpleDateFormat)": {
+    "prefix": "fmt",
+    "description": "Formata data com SimpleDateFormat(\"dd/MM/yyyy\").format($F{DATA})",
+    "body": [
+      "new java.text.SimpleDateFormat(\"${1:dd/MM/yyyy}\").format(\\$F{${2:DATA}})$0"
+    ]
+  },
+  "Jasper Expression: Format Money (DecimalFormat)": {
+    "prefix": "money",
+    "description": "Formata valor monetário com DecimalFormat(\"#,##0.00\").format($F{VALOR})",
+    "body": [
+      "new java.text.DecimalFormat(\"${1:#,##0.00}\").format(\\$F{${2:VALOR}})$0"
+    ]
+  },
+  "Jasper Expression: Groovy Null-Safe (?. / ?:)": {
+    "prefix": "nullsafe",
+    "description": "Expressão Groovy Safe Navigation e Elvis: $F{CAMPO}?.toString() ?: \"\"",
+    "body": [
+      "\\$F{${1:CAMPO}}?.toString() ?: \"${2:}\"$0"
+    ]
+  },
+  "Jasper Expression: Boolean SIM / NÃO": {
+    "prefix": "cond",
+    "description": "Expressão condicional booleana: $F{COND} ? \"SIM\" : \"NÃO\"",
+    "body": [
+      "\\$F{${1:COND}} ? \"${2:SIM}\" : \"${3:NÃO}\"$0"
+    ]
   }
 }

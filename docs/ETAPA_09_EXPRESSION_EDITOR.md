@@ -87,23 +87,27 @@ Editor dedicado para expressões JasperReports (Java/Groovy) com **syntax highli
 ---
 
 ## 4. Critérios de Aceite
-- [ ] Abre editor modal ao clicar CodeLens em expressão
-- [ ] Syntax highlighting Groovy/Java funcional
-- [ ] Autocomplete `$F{`, `$P{`, `$V{`, classes estáticas, métodos por tipo
-- [ ] Validação inline (squiggly) para referências inválidas
-- [ ] Preview com dados mock mostra resultado tipado
-- [ ] Salvar no editor atualiza XML original corretamente
-- [ ] Snippets `if`, `fmt`, `money`, `nullsafe`, `cond` funcionam
+- [x] Abre editor modal ao clicar CodeLens em expressão
+- [x] Syntax highlighting Groovy/Java funcional
+- [x] Autocomplete `$F{`, `$P{`, `$V{`, classes estáticas, métodos por tipo
+- [x] Validação inline (squiggly) para referências inválidas
+- [x] Preview com dados mock mostra resultado tipado
+- [x] Salvar no editor atualiza XML original corretamente
+- [x] Snippets `if`, `fmt`, `money`, `nullsafe`, `cond` funcionam
 
 ---
 
-## 4. Arquivos a Criar/Modificar
+## 5. Arquivos Criados/Modificados
 | Arquivo | Tipo |
 |---------|------|
-| `src/webviewPanels/expressionEditorPanel.ts` | Novo (controller) |
-| `webviews/expression-editor/` | Novo (HTML/CSS/JS + Monaco) |
-| `src/services/expressionValidator.ts` | Novo (linting/parse) |
-| `src/services/groovySignatureLibrary.ts` | Novo (assinaturas Groovy) |
-| `src/commands/reportCommands.ts` | Modificado (comando abrir editor) |
-| `package.json` | Modificado (customEditor, keybinding) |
-| `src/extension.ts` | Modificado (registro) |
+| `src/services/expressionEditor.ts` | Novo (extração XML, linting, inferência de tipos, preview mock) |
+| `src/services/expressionValidator.ts` | Novo (exportação/validação de expressões) |
+| `src/services/groovySignatureLibrary.ts` | Novo (assinaturas Groovy GDK, operadores, funções e snippets) |
+| `src/services/expressionCompletionProvider.ts` | Novo (autocomplete contextual XML e WebView) |
+| `src/services/expressionHoverProvider.ts` | Novo (Hover, CodeLens, Quick Fix e Diagnostics inline no XML) |
+| `src/webviewPanels/expressionEditorPanel.ts` | Novo (controller do WebView modal + CustomEditorProvider) |
+| `webviews/expression-editor/` | Novo (`index.html`, `main.js`, `styles.css`) |
+| `media/monaco/` | Novo (`monaco-expression-bundle.js`, `expression-worker.js`) |
+| `src/commands/reportCommands.ts` | Modificado (comando `jasper.openExpressionEditor`) |
+| `package.json` | Modificado (`customEditors`, `commands`, `menus`, `keybindings`, `configuration`) |
+| `src/extension.ts` | Modificado (registro de providers e lifecycle) |
